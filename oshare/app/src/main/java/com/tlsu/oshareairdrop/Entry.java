@@ -134,6 +134,7 @@ public final class Entry extends XposedModule {
             hookDiscoveryChannels(ProviderHolder.loader(), app);
             hookPermissionActivity(ProviderHolder.loader());
             BridgeMessenger.install(app);
+            DiscoveryController.install(this, ProviderHolder.loader());
             ReceiveController.install(this, app, ProviderHolder.loader());
         }
         scheduleServiceStart(app);
@@ -263,10 +264,13 @@ public final class Entry extends XposedModule {
                         Activity activity = (Activity) chain.getThisObject();
                         Intent intent = activity.getIntent();
                         if (intent != null) {
-                            Object client = intent.getParcelableExtra(BridgeMessenger.EXTRA_CLIENT);
-                            if (client instanceof Messenger && BridgeMessenger.allowedUid(activity.getLaunchedFromUid())) {
-                                BridgeMessenger.attach((Messenger) client, activity.getLaunchedFromUid());
-                                log(Log.INFO, TAG, "bridge client attached");
+                            Messenger client = intent.getParcelableExtra(BridgeMessenger.EXTRA_CLIENT, Messenger.class);
+                            int uid = activity.getLaunchedFromUid();
+                            if (client != null && BridgeMessenger.allowedUid(uid)) {
+                                BridgeMessenger.attach(client, uid);
+                                log(Log.INFO, TAG, "bridge client attached uid=" + uid);
+                            } else if (intent.getBooleanExtra(BOOT_EXTRA, false)) {
+                                log(Log.WARN, TAG, "bridge boot rejected uid=" + uid + " clientPresent=" + (client != null));
                             }
                             if (intent.getBooleanExtra(BOOT_EXTRA, false)) {
                                 log(Log.INFO, TAG, "finishing boot trigger activity");

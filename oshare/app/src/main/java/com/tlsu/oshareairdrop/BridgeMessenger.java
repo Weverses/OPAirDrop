@@ -1,6 +1,8 @@
 package com.tlsu.oshareairdrop;
 
 import android.app.BroadcastOptions;
+import android.app.Activity;
+import android.app.ActivityOptions;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -31,6 +33,8 @@ public final class BridgeMessenger {
     public static final int MSG_HELLO = 1;
     public static final int MSG_COMMAND = 2;
     public static final int MSG_EVENT = 3;
+    /** Admission succeeded; MSG_HELLO still waits for the provider. */
+    public static final int MSG_ATTACHED = 4;
     public static final String EXTRA_CLIENT = "oshare_bridge_client";
     public static final String EXTRA_JSON = "json";
 
@@ -83,6 +87,13 @@ public final class BridgeMessenger {
         context.sendBroadcast(intent, null, BroadcastOptions.makeBasic().setShareIdentityEnabled(true).toBundle());
     }
 
+    public static void boot(Activity activity, Messenger client) {
+        Intent intent = new Intent().setClassName(Entry.HOST, Entry.HOST + ".MoseyPermissionActivity")
+                .putExtra(Entry.BOOT_EXTRA, true).putExtra(EXTRA_CLIENT, client);
+        // Without explicit sharing, getLaunchedFromUid() returns INVALID_UID across UIDs.
+        activity.startActivity(intent, ActivityOptions.makeBasic().setShareIdentityEnabled(true).toBundle());
+    }
+
     public static void send(Messenger server, JSONObject command) throws RemoteException {
         send(server, command, null);
     }
@@ -123,7 +134,11 @@ public final class BridgeMessenger {
             sinkInstalled = true;
             ProviderApi.setSink(BridgeMessenger::sendEvent);
         }
-        if (ProviderHolder.ready()) sendHello();
+        try {
+            clientMessenger.send(Message.obtain(null, MSG_ATTACHED));
+        } catch (RemoteException failure) { remove(clientMessenger); return; }
+        Log.i(TAG, "bridge client admitted uid=" + uid + " providerReady=" + ProviderHolder.ready());
+        if (ProviderHolder.ready()) sendHello(clientMessenger);
     }
 
     private static void remove(Messenger client) {
@@ -141,7 +156,10 @@ public final class BridgeMessenger {
     }
 
     private static void sendHello() {
-        for (Messenger target : CLIENTS) {
+        for (Messenger target : CLIENTS) sendHello(target);
+    }
+
+    private static void sendHello(Messenger target) {
         try {
             Message message = Message.obtain(null, MSG_HELLO);
             message.replyTo = server;
@@ -150,7 +168,6 @@ public final class BridgeMessenger {
         } catch (Throwable t) {
             Log.w(TAG, "bridge hello failed", t);
             remove(target);
-        }
         }
     }
 

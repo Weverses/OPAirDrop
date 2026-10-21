@@ -53,7 +53,7 @@ public final class ProviderApi {
     private static Object transferCallback;
 
     private static boolean discovering;
-    private static boolean panelDiscovery, receiverDiscovery;
+    private static volatile boolean panelDiscovery, receiverDiscovery;
     private static boolean advertising;
 
     private ProviderApi() {}
@@ -124,7 +124,8 @@ public final class ProviderApi {
             Object p = provider();
             Method m = p.getClass().getDeclaredMethod(method, signature);
             m.setAccessible(true);
-            Object result = m.invoke(p, args);
+            Object result = (method.equals("g") || method.equals("i") || method.equals("k"))
+                    ? DiscoverySession.internal(() -> m.invoke(p, args)) : m.invoke(p, args);
             int code = result instanceof Number ? ((Number) result).intValue() : 0;
             Log.i(TAG, "apl." + method + " -> " + code);
             return code;
@@ -302,8 +303,14 @@ public final class ProviderApi {
     }
 
     public static synchronized void startDiscovery() {
+        boolean previous = panelDiscovery;
         panelDiscovery = true;
-        ensureDiscovery();
+        try { ensureDiscovery(); }
+        catch (RuntimeException failure) { panelDiscovery = previous; throw failure; }
+    }
+
+    static boolean discoveryWanted(Object controller) {
+        return controller != null && controller == ProviderHolder.get() && (panelDiscovery || receiverDiscovery);
     }
 
     static synchronized void startReceiverDiscovery() {

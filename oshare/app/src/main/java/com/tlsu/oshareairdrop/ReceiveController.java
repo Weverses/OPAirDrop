@@ -1,17 +1,15 @@
 package com.tlsu.oshareairdrop;
 
 import android.content.Context;
-import android.database.ContentObserver;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.Settings;
 import android.util.Log;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import io.github.libxposed.api.XposedInterface.HookHandle;
 
-/** Owns advertising only while OShare receive, root radio readiness and UI agree. */
+/** Owns background advertising while root radio readiness and the UI host agree. */
 final class ReceiveController {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final ThreadLocal<Boolean> INTERNAL = ThreadLocal.withInitial(() -> false);
@@ -77,11 +75,10 @@ final class ReceiveController {
             handles.add(module.hook(dump).intercept(chain -> {
                 Object result = chain.proceed();
                 ((java.io.PrintWriter) chain.getArg(1)).println("OPAIRSHARE_RECEIVE busy=" + (IncomingReceiver.busy() ? 1 : 0));
+                ((java.io.PrintWriter) chain.getArg(1)).println("OPAIRSHARE_DISCOVERY " + DiscoveryController.status(ProviderHolder.get()));
                 return result;
             }));
             installed = true;
-            context.getContentResolver().registerContentObserver(Settings.System.getUriFor("oshare_state"), false,
-                    new ContentObserver(MAIN) { @Override public void onChange(boolean selfChange) { queueTick(); } });
             MAIN.post(new Runnable() {
                 @Override public void run() { queueTick(); MAIN.postDelayed(this, 1000); }
             });
@@ -104,9 +101,6 @@ final class ReceiveController {
 
     private static boolean wanted() {
         try {
-            Context context = HostContext.get();
-            int mode = Settings.System.getInt(context.getContentResolver(), "oshare_state", 0);
-            if (mode != 1 && mode != 2) return false;
             String ready = (String) Class.forName("android.os.SystemProperties")
                     .getMethod("get", String.class, String.class).invoke(null, "debug.opairshare.receive.ready", "");
             if (ready.isEmpty()) ready = (String) Class.forName("android.os.SystemProperties")

@@ -38,10 +38,12 @@ public final class OShareBridge {
     private static final Messenger CLIENT = new Messenger(new Handler(Looper.getMainLooper(),
             OShareBridge::receive));
     private static ClassLoader loader;
-    private static Messenger server;
+    private static volatile Messenger server;
     private static WeakReference<Activity> activity = new WeakReference<>(null);
     private static boolean connecting;
-    private static long lastBoot;
+    private static boolean bridgeAttached;
+    private static int connectionGeneration;
+    private static android.os.IBinder.DeathRecipient serverDeath;
     private static OShareSymbols symbols;
     private static final ArrayList<HookHandle> HOOKS = new ArrayList<>();
 
@@ -87,7 +89,12 @@ public final class OShareBridge {
             }));
             // The share panel also reads the manager directly after its list callback.
             HOOKS.add(module.hook(symbols.method("manager.list")).intercept(chain -> {
-                ArrayList<Object> result = new ArrayList<>((java.util.List<?>) chain.proceed());
+                ArrayList<Object> result = new ArrayList<>();
+                // Native refreshes may retain a previous merged list. Replace
+                // our namespace with the current snapshot instead of appending
+                // it again (or retaining peers already reported lost).
+                for (Object device : (java.util.List<?>) chain.proceed())
+                    if (device == null || !symbols.key(device).startsWith(PREFIX)) result.add(device);
                 result.addAll(DEVICES.values());
                 return result;
             }));
@@ -98,9 +105,13 @@ public final class OShareBridge {
             HOOKS.add(module.hook(symbols.method("activity.resume")).intercept(chain -> {
                 Object result = chain.proceed();
                 Activity current = (Activity) chain.getThisObject();
+                if (activity.get() != current) {
+                    connectionGeneration++;
+                    connecting = false;
+                }
                 activity = new WeakReference<>(current);
                 OShareAppearance.renameSection(current);
-                MAIN.postDelayed(() -> connect(current, 0), 1200);
+                MAIN.postDelayed(() -> connect(current), 1200);
                 return result;
             }));
             for (String role : new String[]{"activity.update", "activity.list", "activity.panel"}) {
@@ -113,7 +124,9 @@ public final class OShareBridge {
             HOOKS.add(module.hook(symbols.method("activity.destroy")).intercept(chain -> {
                 if (activity.get() == chain.getThisObject()) {
                     activity.clear();
-                    command("discover_stop", null);
+                    connectionGeneration++;
+                    connecting = false;
+                    if (server != null) command("discover_stop", null);
                     DEVICES.clear();
                 }
                 return chain.proceed();
@@ -143,34 +156,41 @@ public final class OShareBridge {
         }
     }
 
-    private static void connect(Activity current, int attempt) {
-        if (current.isFinishing() || current.isDestroyed()) return;
+    private static boolean isCurrentActivity(Activity current) {
+        return current != null && activity.get() == current && !current.isFinishing() && !current.isDestroyed();
+    }
+
+    private static void connect(Activity current) {
+        if (!isCurrentActivity(current)) return;
         if (server != null && server.getBinder().isBinderAlive()) {
             command("discover_start", null);
             return;
         }
-        if (connecting && attempt == 0) return;
+        if (connecting) return;
         server = null;
-        long wait = 8000 - (android.os.SystemClock.elapsedRealtime() - lastBoot);
-        if (attempt == 0 && wait > 0) {
-            MAIN.postDelayed(() -> connect(current, 0), wait);
-            return;
-        }
         connecting = true;
+        bridgeAttached = false;
+        boot(current, ++connectionGeneration, 0);
+    }
+
+    private static boolean pending(Activity current, int generation) {
+        return isCurrentActivity(current) && connecting && generation == connectionGeneration;
+    }
+
+    private static void boot(Activity current, int generation, int attempt) {
+        if (!pending(current, generation)) return;
         try {
-            Intent boot = new Intent().setClassName(Entry.HOST, Entry.HOST + ".MoseyPermissionActivity");
-            boot.putExtra(Entry.BOOT_EXTRA, true);
-            boot.putExtra(BridgeMessenger.EXTRA_CLIENT, CLIENT);
-            current.startActivity(boot);
-            lastBoot = android.os.SystemClock.elapsedRealtime();
-            MAIN.postDelayed(() -> {
-                connecting = false;
-                if (server == null) toast("AirDrop 未连接，请检查 LSPosed 的 Mosey 作用域和底层服务");
-            }, 7000);
+            BridgeMessenger.boot(current, CLIENT);
+            Log.i(TAG, "bridge boot requested generation=" + generation);
+            MAIN.postDelayed(() -> checkConnection(current, generation, 0), 2000);
         } catch (android.content.ActivityNotFoundException e) {
             // The resident module enables Mosey after observing the sharing screen.
-            if (attempt < 4) MAIN.postDelayed(() -> connect(current, attempt + 1), 1500);
+            if (attempt < 4) MAIN.postDelayed(() -> boot(current, generation, attempt + 1), 1500);
             else { connecting = false; toast("AirDrop 服务未启用，请启动底层模块"); }
+        } catch (SecurityException t) {
+            connecting = false;
+            Log.e(TAG, "bridge boot denied", t);
+            toast("AirDrop 服务启动被系统拒绝，请查看桥接日志");
         } catch (Throwable t) {
             connecting = false;
             Log.e(TAG, "OShare boot failed", t);
@@ -178,12 +198,55 @@ public final class OShareBridge {
         }
     }
 
+    private static void checkConnection(Activity current, int generation, int check) {
+        if (!pending(current, generation)) return;
+        if (check == 4) {
+            connecting = false;
+            Log.w(TAG, "bridge timeout generation=" + generation + " attached=" + bridgeAttached);
+            toast(bridgeAttached ? "AirDrop 桥接已接入，但传输服务尚未就绪，请查看模块日志"
+                    : "AirDrop 桥接未响应，请检查 LSPosed 中 Mosey 的加载日志");
+            return;
+        }
+        // Retry admission without reopening an Activity or restarting the wireless stack.
+        try { BridgeMessenger.connect(current, CLIENT); }
+        catch (Throwable failure) { Log.w(TAG, "bridge admission retry failed", failure); }
+        MAIN.postDelayed(() -> checkConnection(current, generation, check + 1), 2000);
+    }
+
+    private static void disconnected(Messenger expected) {
+        if (server != expected) return;
+        server = null;
+        serverDeath = null;
+        connectionGeneration++;
+        connecting = false;
+        bridgeAttached = false;
+        boolean interrupted = !ACTIVE.isEmpty();
+        DEVICES.clear(); ACTIVE.clear(); PHASES.clear(); STARTED.clear();
+        try { refresh(); } catch (Throwable failure) { Log.w(TAG, "disconnect refresh failed", failure); }
+        if (interrupted) toast("AirDrop 服务连接中断，请重新发送文件");
+        Activity current = activity.get();
+        if (isCurrentActivity(current)) MAIN.postDelayed(() -> connect(current), 1200);
+    }
+
     private static boolean receive(Message message) {
+        if (message.what == BridgeMessenger.MSG_ATTACHED) {
+            if (connecting && isCurrentActivity(activity.get())) bridgeAttached = true;
+            return true;
+        }
         if (message.what == BridgeMessenger.MSG_HELLO) {
+            if (message.replyTo == null || !isCurrentActivity(activity.get())) return true;
             boolean reconnected = server == null || !server.getBinder().equals(message.replyTo.getBinder());
-            server = message.replyTo;
+            if (reconnected) {
+                if (server != null && serverDeath != null) server.getBinder().unlinkToDeath(serverDeath, 0);
+                Messenger connected = message.replyTo;
+                server = connected;
+                serverDeath = () -> MAIN.post(() -> disconnected(connected));
+                try { connected.getBinder().linkToDeath(serverDeath, 0); }
+                catch (android.os.RemoteException failure) { disconnected(connected); return true; }
+            }
             if (reconnected) { ACTIVE.clear(); PHASES.clear(); STARTED.clear(); }
             connecting = false;
+            connectionGeneration++;
             command("discover_start", null);
             Entry.instance.log(Log.INFO, TAG, "OShare bridge ready");
             return true;
@@ -313,14 +376,15 @@ public final class OShareBridge {
                         .put("id", Long.parseLong(key.substring(PREFIX.length())))
                         .put("uris", new JSONArray()).put("files", values)
                         .put("text", uris.isEmpty() && text != null ? text.toString() : "");
-                if (server == null) throw new IllegalStateException("AirDrop 尚未连接");
+                Messenger connected = server;
+                if (connected == null) throw new IllegalStateException("AirDrop 尚未连接");
                 Bundle data = new Bundle();
                 data.putString(BridgeMessenger.EXTRA_JSON, request.toString());
                 data.putParcelableArrayList("files", descriptors);
                 Message message = Message.obtain(null, BridgeMessenger.MSG_COMMAND);
                 message.setData(data);
-                try { server.send(message); }
-                catch (android.os.RemoteException e) { server = null; throw e; }
+                try { connected.send(message); }
+                catch (android.os.RemoteException e) { MAIN.post(() -> disconnected(connected)); throw e; }
             } finally {
                 for (ParcelFileDescriptor fd : descriptors) try { fd.close(); } catch (Exception ignored) {}
             }
@@ -341,11 +405,12 @@ public final class OShareBridge {
     }
 
     private static void sendCommand(JSONObject request) throws Exception {
-        if (server == null) throw new IllegalStateException("AirDrop 尚未连接");
+        Messenger connected = server;
+        if (connected == null) throw new IllegalStateException("AirDrop 尚未连接");
         Bundle data = new Bundle(); data.putString(BridgeMessenger.EXTRA_JSON, request.toString());
         Message message = Message.obtain(null, BridgeMessenger.MSG_COMMAND); message.setData(data);
-        try { server.send(message); }
-        catch (android.os.RemoteException e) { server = null; throw e; }
+        try { connected.send(message); }
+        catch (android.os.RemoteException e) { MAIN.post(() -> disconnected(connected)); throw e; }
     }
 
     private static void state(Object device, String name) throws Exception {
