@@ -98,8 +98,46 @@ sh oshare/tests/run.sh
 | 日志导出目录 | `/sdcard/Download/OPAirShare` |
 | 桥接应用 ID | `com.tlsu.oshareairdrop` |
 
-## 来源与许可
+## 开源许可
 
-项目默认采用 **GPLv3**，完整条款见 [LICENSE](LICENSE)。内核适配、原生助手和引用代码的协议范围见 [开源许可说明](LICENSING.md)，来源与版本见 [第三方声明](THIRD_PARTY_NOTICES.md)。各组件的原 SPDX 标识与版权声明随源码保留。
+项目默认采用 **GPLv3**，允许使用、修改和商业分发。分发项目代码或修改版时，保留版权与许可声明，并按协议提供对应源码。
+
+内核适配、部分原生助手和第三方代码使用各自的协议，具体范围见 [开源许可说明](LICENSING.md)。协议全文位于 [LICENSE](LICENSE) 和 [LICENSES](LICENSES/README.md)，组件来源与许可记录见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+
+## 使用与参考项目
+
+### 源码与研究参考
+
+| 项目 | 在本项目中的用途 |
+| --- | --- |
+| [OnePlusOSS](https://github.com/OnePlusOSS/kernel_manifest) | SM8750 平台内核、Qualcomm WLAN 与 Oplus Wonder 源码基线 |
+| [34306/AirDropVivoCN](https://github.com/34306/AirDropVivoCN) | 项目早期研究与部署方案的起点 |
+| [thelok1s/mosey-extended](https://github.com/thelok1s/mosey-extended) | KernelSU 模块组织、Mosey 部署与服务接入参考 |
+| [FeelLiao/mosey-bada](https://github.com/FeelLiao/mosey-bada) | 原生 Binder 服务接入、桥接与用户态分享架构参考 |
+| [seemoo-lab/owl](https://github.com/seemoo-lab/owl) | AWDL 帧格式与频道字段分析参考 |
+| [t4t5/omdrop-owl](https://github.com/t4t5/omdrop-owl) | AWDL 时间窗口、固定频道与吞吐优化研究参考 |
+| [UvejsGj/Windfall](https://github.com/UvejsGj/Windfall) | 无线重传、接收响应与传输性能分析参考 |
+| [luyanci/hybrid-miuix-webui](https://github.com/luyanci/hybrid-miuix-webui) | WebUI 组件布局与界面组织参考 |
+
+### 组件、构建工具与运行环境
+
+| 项目 | 用途 |
+| --- | --- |
+| [Vue](https://github.com/vuejs/core) | WebUI 应用框架 |
+| [miuix-vue](https://github.com/YuKongA/miuix-vue) | WebUI 组件 |
+| [Motion for Vue](https://github.com/motiondivision/motion-vue) / [Motion](https://github.com/motiondivision/motion) | miuix-vue 使用的动画依赖 |
+| [Vite](https://github.com/vitejs/vite) | WebUI 构建 |
+| [Gradle](https://github.com/gradle/gradle) | Android 桥接工程构建 |
+| [libxposed API](https://github.com/libxposed/api) | OShare / Mosey 桥接使用的 Xposed 接口 |
+| [LSPosed](https://github.com/LSPosed/LSPosed) | Android 桥接运行环境 |
+| [KernelSU](https://github.com/tiann/KernelSU) | 模块启动、挂载与 WebUI 运行环境 |
+
+各项目的贡献归原作者所有。引用代码和依赖的许可文件随仓库保留，详细记录见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+
+## 独立项目说明
+
+OPAirShare 是独立社区项目，与 **Google、Apple、Oplus（包括 OPPO、OnePlus）不存在隶属、官方合作或背书关系**。
+
+文中涉及的品牌、产品名称和商标归各自权利人所有，用于说明兼容对象、技术来源和运行环境。项目代码的开源许可与这些品牌、产品及商标的权属分别适用。
 
 源码提取与迁移记录位于 `docs/migration.json`，本地构建和回归记录位于 `docs/verification.json`。
