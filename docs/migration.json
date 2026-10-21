@@ -1,0 +1,720 @@
+{
+  "source": "/Users/evermore/Desktop/dev/android/AirDropVivoCN/oneplus13",
+  "snapshot": "ksu-module-stage72-aligned-r27",
+  "selection": "latest implementation and build dependencies",
+  "copied_source_files": [
+    {
+      "source": "ksu-module-stage72-aligned-r27/LICENSE",
+      "target": "LICENSE"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/uninstall.sh",
+      "target": "module/uninstall.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/service.sh",
+      "target": "module/service.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/customize.sh",
+      "target": "module/customize.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/action.sh",
+      "target": "module/action.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/app-check.sh",
+      "target": "module/bin/app-check.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/callback-bootstrap.sh",
+      "target": "module/bin/callback-bootstrap.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/callback.sh",
+      "target": "module/bin/callback.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/coex-session.sh",
+      "target": "module/bin/coex-session.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/common.sh",
+      "target": "module/bin/common.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/control.sh",
+      "target": "module/bin/control.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/grant-permissions.sh",
+      "target": "module/bin/grant-permissions.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/kernel-identity.sh",
+      "target": "module/bin/kernel-identity.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/provider.sh",
+      "target": "module/bin/provider.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/settings.sh",
+      "target": "module/bin/settings.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/speed-history.sh",
+      "target": "module/bin/speed-history.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/supervise-provider.sh",
+      "target": "module/bin/supervise-provider.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/transfer-idle.sh",
+      "target": "module/bin/transfer-idle.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/turbo.sh",
+      "target": "module/bin/turbo.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/ui-lifecycle.sh",
+      "target": "module/bin/ui-lifecycle.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/bin/verify.sh",
+      "target": "module/bin/verify.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/module.prop",
+      "target": "module/module.prop"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/sepolicy.rule",
+      "target": "module/sepolicy.rule"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/system/system_ext/etc/permissions/privapp-permissions-op13-mosey.xml",
+      "target": "module/system/system_ext/etc/permissions/privapp-permissions-opairshare-mosey.xml"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/system/system_ext/etc/default-permissions/default-permissions-op13-mosey.xml",
+      "target": "module/system/system_ext/etc/default-permissions/default-permissions-opairshare-mosey.xml"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/system/system_ext/etc/vintf/manifest/manifest_mosey.xml",
+      "target": "module/system/system_ext/etc/vintf/manifest/manifest_mosey.xml"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/system/product/etc/permissions/mosey-hiddenapi-op13.xml",
+      "target": "module/system/product/etc/permissions/mosey-hiddenapi-opairshare.xml"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage72/app/index.html",
+      "target": "webui/index.html"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage72/app/package-lock.json",
+      "target": "webui/package-lock.json"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage72/app/package.json",
+      "target": "webui/package.json"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage72/app/src/App.vue",
+      "target": "webui/src/App.vue"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage72/app/src/api.ts",
+      "target": "webui/src/api.ts"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage72/app/src/main.ts",
+      "target": "webui/src/main.ts"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage72/app/src/style.css",
+      "target": "webui/src/style.css"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage72/app/tsconfig.json",
+      "target": "webui/tsconfig.json"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage72/app/vite.config.ts",
+      "target": "webui/vite.config.ts"
+    },
+    {
+      "source": "stage71-miuix/LICENSE-REFERENCE",
+      "target": "webui/LICENSE-REFERENCE"
+    },
+    {
+      "source": "stage71-miuix/reference-info.json",
+      "target": "webui/reference-info.json"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/README.md",
+      "target": "oshare/README.md"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/REPAIR-RESULTS.md",
+      "target": "oshare/REPAIR-RESULTS.md"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/build.gradle.kts",
+      "target": "oshare/app/build.gradle.kts"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/AndroidManifest.xml",
+      "target": "oshare/app/src/main/AndroidManifest.xml"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/AirDropPresentation.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/AirDropPresentation.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/BridgeMessenger.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/BridgeMessenger.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/BridgeServer.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/BridgeServer.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/CallbackFactory.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/CallbackFactory.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/DiscoveryChannels.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/DiscoveryChannels.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/Entry.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/Entry.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/HostContext.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/HostContext.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/MainActivity.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/MainActivity.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/OShareAppearance.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/OShareAppearance.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/OShareBridge.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/OShareBridge.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/OutgoingTransfers.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/OutgoingTransfers.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/ProviderApi.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/ProviderApi.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/java/com/tlsu/oshareairdrop/ProviderHolder.java",
+      "target": "oshare/app/src/main/java/com/tlsu/oshareairdrop/ProviderHolder.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/res/values/strings.xml",
+      "target": "oshare/app/src/main/res/values/strings.xml"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/resources/META-INF/xposed/java_init.list",
+      "target": "oshare/app/src/main/resources/META-INF/xposed/java_init.list"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/resources/META-INF/xposed/module.prop",
+      "target": "oshare/app/src/main/resources/META-INF/xposed/module.prop"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/app/src/main/resources/META-INF/xposed/scope.list",
+      "target": "oshare/app/src/main/resources/META-INF/xposed/scope.list"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/build.gradle.kts",
+      "target": "oshare/build.gradle.kts"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/gradle/wrapper/gradle-wrapper.jar",
+      "target": "oshare/gradle/wrapper/gradle-wrapper.jar"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/gradle/wrapper/gradle-wrapper.properties",
+      "target": "oshare/gradle/wrapper/gradle-wrapper.properties"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/gradle.properties",
+      "target": "oshare/gradle.properties"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/gradlew",
+      "target": "oshare/gradlew"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/gradlew.bat",
+      "target": "oshare/gradlew.bat"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/settings.gradle.kts",
+      "target": "oshare/settings.gradle.kts"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/tests/AirDropPresentationTest.java",
+      "target": "oshare/tests/AirDropPresentationTest.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/tests/CallbackFactoryTest.java",
+      "target": "oshare/tests/CallbackFactoryTest.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/tests/DiscoveryChannelsTest.java",
+      "target": "oshare/tests/DiscoveryChannelsTest.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/tests/OutgoingTransfersTest.java",
+      "target": "oshare/tests/OutgoingTransfersTest.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/tests/android/com/tlsu/oshareairdrop/Entry.java",
+      "target": "oshare/tests/android/com/tlsu/oshareairdrop/Entry.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/tests/android/com/tlsu/oshareairdrop/TransferCallbackTest.java",
+      "target": "oshare/tests/android/com/tlsu/oshareairdrop/TransferCallbackTest.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/tests/appearance/AppearanceStateTest.java",
+      "target": "oshare/tests/appearance/AppearanceStateTest.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/tests/run-android.sh",
+      "target": "oshare/tests/run-android.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/tests/run-appearance-android.sh",
+      "target": "oshare/tests/run-appearance-android.sh"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage69/OShareAirDrop/tests/run.sh",
+      "target": "oshare/tests/run.sh"
+    },
+    {
+      "source": "stage39-mosey-capability.c",
+      "target": "native/capability.c"
+    },
+    {
+      "source": "stage39-mosey-capability.map",
+      "target": "native/capability.map"
+    },
+    {
+      "source": "stage46-socket-buffer.c",
+      "target": "native/socket-buffer.c"
+    },
+    {
+      "source": "Op13SessionWifi.java",
+      "target": "native/OPAirShareSessionWifi.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/mosey-hopping-config.c",
+      "target": "native/config.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/mosey-hopping-config.map",
+      "target": "native/config.map"
+    },
+    {
+      "source": "stage60-callback/build.py",
+      "target": "mosey/callback/build.py"
+    },
+    {
+      "source": "stage60-callback/smali-inputs.json",
+      "target": "mosey/callback/smali-inputs.json"
+    },
+    {
+      "source": "stage60-callback/Op13CallbackSelftest.java",
+      "target": "mosey/callback/OPAirShareCallbackSelftest.java"
+    },
+    {
+      "source": "stage68-coexist/discovery-5g/build.py",
+      "target": "mosey/discovery/build.py"
+    },
+    {
+      "source": "stage68-coexist/discovery-5g/DiscoveryPolicy.java",
+      "target": "mosey/discovery/DiscoveryPolicy.java"
+    },
+    {
+      "source": "stage68-coexist/discovery-5g/PolicySelftest.java",
+      "target": "mosey/discovery/PolicySelftest.java"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/agg-core.h",
+      "target": "kernel/driver/agg-core.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage39/cdp_txrx_mob_def.h",
+      "target": "kernel/driver/cdp_txrx_mob_def.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/collect-core.h",
+      "target": "kernel/driver/collect-core.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/dp_be_rx.c",
+      "target": "kernel/driver/dp_be_rx.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/dp_mon_filter.c",
+      "target": "kernel/driver/dp_mon_filter.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/dp_op13_rx_audit.h",
+      "target": "kernel/driver/dp_opairshare_rx_audit.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage31/dp_peer.c",
+      "target": "kernel/driver/dp_peer.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/dp_rx.c",
+      "target": "kernel/driver/dp_rx.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/dp_rx_err.c",
+      "target": "kernel/driver/dp_rx_err.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/dp_rx_mon_dest_1.0.c",
+      "target": "kernel/driver/dp_rx_mon_dest_1.0.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/hal_be_api_mon.h",
+      "target": "kernel/driver/hal_be_api_mon.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage39/target_if_p2p.c",
+      "target": "kernel/driver/target_if_p2p.c"
+    },
+    {
+      "source": "stage19-source/qca-wifi-host-cmn/target_if/mlme/psoc/src/target_if_psoc_timer_tx_ops.c",
+      "target": "kernel/driver/target_if_psoc_timer_tx_ops.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage41/target_if_vdev_mgr_rx_ops.c",
+      "target": "kernel/driver/target_if_vdev_mgr_rx_ops.c"
+    },
+    {
+      "source": "stage19-source/qca-wifi-host-cmn/target_if/mlme/vdev_mgr/src/target_if_vdev_mgr_tx_ops.c",
+      "target": "kernel/driver/target_if_vdev_mgr_tx_ops.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/baseline/wlan_cm_vdev_connect.c",
+      "target": "kernel/driver/wlan_cm_vdev_connect.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wlan_dp_txrx.c",
+      "target": "kernel/driver/wlan_dp_txrx.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage39/wlan_hdd_main.h",
+      "target": "kernel/driver/wlan_hdd_main.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wlan_hdd_op13_aux_rx.h",
+      "target": "kernel/driver/wlan_hdd_opairshare_aux_rx.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wlan_hdd_op13_awdl_rx_dedup.h",
+      "target": "kernel/driver/wlan_hdd_opairshare_awdl_rx_dedup.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wlan_hdd_op13_pas_pause.h",
+      "target": "kernel/driver/wlan_hdd_opairshare_pas_pause.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wlan_hdd_op13_rx_order.h",
+      "target": "kernel/driver/wlan_hdd_opairshare_rx_order.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wlan_hdd_op13_rx_ring_switch.h",
+      "target": "kernel/driver/wlan_hdd_opairshare_rx_ring_switch.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage44/wlan_hdd_scan.c",
+      "target": "kernel/driver/wlan_hdd_scan.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wlan_hdd_tx_rx.c",
+      "target": "kernel/driver/wlan_hdd_tx_rx.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wlan_hdd_wmm.c",
+      "target": "kernel/driver/wlan_hdd_wmm.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wlan_hdd_wondertap.c",
+      "target": "kernel/driver/wlan_hdd_wondertap.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage44/wlan_policy_mgr_api.h",
+      "target": "kernel/driver/wlan_policy_mgr_api.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage44/wlan_policy_mgr_get_set_utils.c",
+      "target": "kernel/driver/wlan_policy_mgr_get_set_utils.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage44/wlan_policy_mgr_op13_sta_coexist.h",
+      "target": "kernel/driver/wlan_policy_mgr_opairshare_sta_coexist.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage44/wlan_policy_mgr_pcl.c",
+      "target": "kernel/driver/wlan_policy_mgr_pcl.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage31/wma_dev_if.c",
+      "target": "kernel/driver/wma_dev_if.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wma_mgmt.c",
+      "target": "kernel/driver/wma_mgmt.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wma_op13_awdl_ba.h",
+      "target": "kernel/driver/wma_opairshare_awdl_ba.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wma_op13_awdl_rx_mac_filter.h",
+      "target": "kernel/driver/wma_opairshare_awdl_rx_mac_filter.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage27/wma_op13_awdl_sequence.h",
+      "target": "kernel/driver/wma_opairshare_awdl_sequence.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wma_op13_awdl_target.h",
+      "target": "kernel/driver/wma_opairshare_awdl_target.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage41/wma_op13_awdl_trace.h",
+      "target": "kernel/driver/wma_opairshare_awdl_trace.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wma_op13_channel_state.h",
+      "target": "kernel/driver/wma_opairshare_channel_state.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wma_op13_flow_control.h",
+      "target": "kernel/driver/wma_opairshare_flow_control.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage41/wma_op13_metrics.h",
+      "target": "kernel/driver/wma_opairshare_metrics.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wma_op13_native_rx_work.h",
+      "target": "kernel/driver/wma_opairshare_native_rx_work.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/stage62-tx/r2/source/wma_op13_pas_mgmt.h",
+      "target": "kernel/driver/wma_opairshare_pas_mgmt.h"
+    },
+    {
+      "source": "stage19-source/qcacld-3.0/core/wma/src/wma_utils.c",
+      "target": "kernel/driver/wma_utils.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/Kbuild",
+      "target": "kernel/wonder/Kbuild"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/Kconfig",
+      "target": "kernel/wonder/Kconfig"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/Makefile",
+      "target": "kernel/wonder/Makefile"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/Makefile.include",
+      "target": "kernel/wonder/Makefile.include"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/band_config.c",
+      "target": "kernel/wonder/band_config.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/core.h",
+      "target": "kernel/wonder/core.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/debugfs.c",
+      "target": "kernel/wonder/debugfs.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/defconfig",
+      "target": "kernel/wonder/defconfig"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/include/wonder/wonder_ven_cmd.h",
+      "target": "kernel/wonder/include/wonder/wonder_ven_cmd.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/include/wonder/wondertap.h",
+      "target": "kernel/wonder/include/wonder/wondertap.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/mac80211.c",
+      "target": "kernel/wonder/mac80211.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/mac80211.h",
+      "target": "kernel/wonder/mac80211.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/mac80211_txs.c",
+      "target": "kernel/wonder/mac80211_txs.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/mac80211_txs.h",
+      "target": "kernel/wonder/mac80211_txs.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/main.c",
+      "target": "kernel/wonder/main.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/nl80211_ven_cmd.c",
+      "target": "kernel/wonder/nl80211_ven_cmd.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/nl80211_ven_cmd.h",
+      "target": "kernel/wonder/nl80211_ven_cmd.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/reg.h",
+      "target": "kernel/wonder/reg.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/ssr.c",
+      "target": "kernel/wonder/ssr.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/ssr.h",
+      "target": "kernel/wonder/ssr.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/wonder_log.h",
+      "target": "kernel/wonder/wonder_log.h"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/wondertap.c",
+      "target": "kernel/wonder/wondertap.c"
+    },
+    {
+      "source": "ksu-module-stage72-aligned-r27/source/wonder/wondertap_internal.h",
+      "target": "kernel/wonder/wondertap_internal.h"
+    },
+    {
+      "source": "route-b-provider/BUILD.bazel",
+      "target": "kernel/provider/BUILD.bazel"
+    },
+    {
+      "source": "route-b-provider/probe.c",
+      "target": "kernel/provider/probe.c"
+    },
+    {
+      "source": "route-b-provider/provider.c",
+      "target": "kernel/provider/provider.c"
+    },
+    {
+      "source": "route-b-provider/wondertap.h",
+      "target": "kernel/provider/wondertap.h"
+    },
+    {
+      "source": "patches/0006-stage3-hdd-ops-lifecycle-ddk.patch",
+      "target": "kernel/patches/0006-stage3-hdd-ops-lifecycle-ddk.patch"
+    },
+    {
+      "source": "patches/0007-session-dp-and-hardware-guards.patch",
+      "target": "kernel/patches/0007-session-dp-and-hardware-guards.patch"
+    },
+    {
+      "source": "patches/0003-stage2a-qdf-enums-policy-buildchain.patch",
+      "target": "kernel/patches/0003-stage2a-qdf-enums-policy-buildchain.patch"
+    },
+    {
+      "source": "patches/0004-mac80211-rate-control-for-wonder.patch",
+      "target": "kernel/patches/0004-mac80211-rate-control-for-wonder.patch"
+    },
+    {
+      "source": "patches/0005-stage2b-pld-cnss2-wonder.patch",
+      "target": "kernel/patches/0005-stage2b-pld-cnss2-wonder.patch"
+    },
+    {
+      "source": "patches/0007-session-dp-candidate.patch",
+      "target": "kernel/patches/0007-session-dp-candidate.patch"
+    },
+    {
+      "source": "patches/0001-wonder-sun-bazel.patch",
+      "target": "kernel/patches/0001-wonder-sun-bazel.patch"
+    },
+    {
+      "source": "patches/0002-exact-platform-target.patch",
+      "target": "kernel/patches/0002-exact-platform-target.patch"
+    },
+    {
+      "source": "sync-source.sh",
+      "target": "tools/kernel/sync-source.sh"
+    },
+    {
+      "source": "build-baseline.sh",
+      "target": "tools/kernel/build-baseline.sh"
+    },
+    {
+      "source": "build-wlan-baseline.sh",
+      "target": "tools/kernel/build-wlan-baseline.sh"
+    },
+    {
+      "source": "build-wlan-feature-check.sh",
+      "target": "tools/kernel/build-wlan-feature-check.sh"
+    },
+    {
+      "source": "build-route-b-provider.sh",
+      "target": "tools/kernel/build-route-b-provider.sh"
+    },
+    {
+      "source": "module_abi.py",
+      "target": "tools/kernel/module_abi.py"
+    },
+    {
+      "source": "module_exports.py",
+      "target": "tools/kernel/module_exports.py"
+    },
+    {
+      "source": "stage70-webui/test-settings.py",
+      "target": "tests/settings_base.py"
+    },
+    {
+      "source": "stage71-miuix/test-settings.py",
+      "target": "tests/test_settings.py"
+    },
+    {
+      "source": "stage71-miuix/test-history.py",
+      "target": "tests/test_history.py"
+    },
+    {
+      "source": "stage71-miuix/test-api.mjs",
+      "target": "tests/test-api.mjs"
+    }
+  ],
+  "reference_binaries": "local-inputs/reference-r27 (ignored; unchanged)"
+}

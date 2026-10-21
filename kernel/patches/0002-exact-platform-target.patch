@@ -1,0 +1,13 @@
+--- a/kernel_platform/msm-kernel/build_with_bazel.py
++++ b/kernel_platform/msm-kernel/build_with_bazel.py
+@@ -149,8 +149,8 @@
+                     re.compile(r"//{}:{}[^-]*_{}_{}_dist".format(self.kernel_dir, t, v, s))
+                     for s in self.skip_list
+                 ]
+-                query = 'filter("{}[^-]*_{}.*_dist$", attr(generator_function, define_msm_platforms, {}/...))'.format(
+-                    t, v, self.kernel_dir
++                query = 'filter("^//{}:{}_{}(_.*)?_dist$", attr(generator_function, define_msm_platforms, {}/...))'.format(
++                    self.kernel_dir, t, v, self.kernel_dir
+                 )
+ 
+             cmdline = [

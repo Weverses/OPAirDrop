@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Google Wonder WiFi Virtual Device Driver
+#
+
+config WONDER_SUPPORT
+	tristate "Wonder Driver Support"
+	depends on MAC80211
+	default n
+	help
+		This option enables support for the Google Wonder WiFi Virtual
+		Device Driver. This driver provides a virtual interface for
+		interacting with Wonder WiFi hardware.
+		Select this if you need to use the Wonder WiFi functionality
+		for testing, development, or specific Wonder-based applications.
+		It allows for simulation and control of WiFi operations.
+
+config WONDER_SYNA_SUPPORT
+	tristate "Wonder Vendor Support - SYNA"
+	depends on WONDER_SUPPORT
+	default n
+	help
+		Wonder Vendor Support - SYNA
+
+config WONDER_TX_DEBUG
+	tristate "Wonder TX Debug Message Support"
+	depends on WONDER_SUPPORT
+	default n
+	help
+		Wonder TX Debug Message Suppor
+
+config WONDER_RX_DEBUG
+	tristate "Wonder RX Debug Message Support"
+	depends on WONDER_SUPPORT
+	default n
+	help
+		Wonder RX Debug Message Suppor
+
+config WONDER_RX_FILTER_SUPPORT
+	tristate "Wonder RX Filter Support"
+	depends on WONDER_SUPPORT
+	default n
+	help
+		Wonder RX Filter Suppor

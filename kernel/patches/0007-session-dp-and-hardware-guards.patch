@@ -1,0 +1,2459 @@
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/inc/cdp_txrx_cmn_struct.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/inc/cdp_txrx_cmn_struct.h
+@@ -1497,6 +1497,7 @@
+  * @cdp_vdev_param_mon_freq: set monitor frequency
+  * @cdp_vdev_param_monitor_chan: monitor channel
+  * @cdp_vdev_paran_wds_ext_ap_bridge: enable/disable ap_bridge for wds_ext peers
++ * @cdp_passthru_vdev_freq: passthru vdev frequency
+  *
+  * @cdp_pdev_param_dbg_snf: Enable debug sniffer feature
+  * @cdp_pdev_param_bpr_enable: Enable bcast probe feature
+@@ -1612,6 +1613,7 @@
+ 	qdf_freq_t cdp_vdev_param_mon_freq;
+ 	int cdp_vdev_param_monitor_chan;
+ 	bool cdp_vdev_paran_wds_ext_ap_bridge;
++	qdf_freq_t cdp_passthru_vdev_freq;
+ 
+ 	/* pdev params */
+ 	bool cdp_pdev_param_cptr_latcy;
+@@ -1799,6 +1801,7 @@
+  * @CDP_MONITOR_CHANNEL: monitor channel
+  * @CDP_MONITOR_FREQUENCY: monitor frequency
+  * @CDP_EAPOL_OVER_CONTROL_PORT_DISABLE: Disable eapol over control port
++ * @CDP_VDEV_SET_PASSTHRU_FREQ: set passthru vdev frequency
+  */
+ enum cdp_vdev_param_type {
+ 	CDP_ENABLE_NAWDS,
+@@ -1854,6 +1857,7 @@
+ 	CDP_MONITOR_CHANNEL,
+ 	CDP_MONITOR_FREQUENCY,
+ 	CDP_EAPOL_OVER_CONTROL_PORT_DISABLE,
++	CDP_VDEV_SET_PASSTHRU_FREQ,
+ };
+ 
+ /**
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/be/dp_be_tx.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/be/dp_be_tx.c
+@@ -371,23 +371,29 @@
+ 		ts.peer_id = HTT_INVALID_PEER;
+ 		ts.tid = HTT_INVALID_TID;
+ 	}
+-	txrx_peer = dp_txrx_peer_get_ref_by_id(soc, ts.peer_id,
+-					       &txrx_ref_handle,
+-					       DP_MOD_ID_HTT_COMP);
+-	if (qdf_likely(txrx_peer)) {
+-		if (qdf_unlikely(qdf_nbuf_is_ipv4_eapol_pkt(tx_desc->nbuf))) {
+-			eapol_type = qdf_nbuf_get_eapol_subtype(tx_desc->nbuf);
+-			pairwise = (eapol_type == QDF_PROTO_EAPOL_G1 ||
+-				    eapol_type == QDF_PROTO_EAPOL_G2) ? 0 : 1;
+-			dp_tx_update_eapol_comp_status_stats(soc, vdev,
+-							     tx_desc->nbuf,
+-							     txrx_peer, 0,
+-							     tx_status,
+-							     pairwise);
++
++	if (qdf_likely(wlan_op_mode_passthru != vdev->opmode)) {
++		txrx_peer = dp_txrx_peer_get_ref_by_id(soc, ts.peer_id,
++						       &txrx_ref_handle,
++						       DP_MOD_ID_HTT_COMP);
++		if (qdf_likely(txrx_peer)) {
++			if (qdf_unlikely(qdf_nbuf_is_ipv4_eapol_pkt(tx_desc->nbuf))) {
++				eapol_type = qdf_nbuf_get_eapol_subtype(tx_desc->nbuf);
++				pairwise = (eapol_type == QDF_PROTO_EAPOL_G1 ||
++					    eapol_type == QDF_PROTO_EAPOL_G2) ?
++					   0 : 1;
++				dp_tx_update_eapol_comp_status_stats(soc, vdev,
++								     tx_desc->nbuf,
++								     txrx_peer,
++								     0,
++								     tx_status,
++								     pairwise);
++			}
++			dp_txrx_peer_unref_delete(txrx_ref_handle,
++						  DP_MOD_ID_HTT_COMP);
+ 		}
+-		dp_txrx_peer_unref_delete(txrx_ref_handle,
+-					  DP_MOD_ID_HTT_COMP);
+-	}
++	}
++
+ 	switch (tx_status) {
+ 	case HTT_TX_FW2WBM_TX_STATUS_DROP:
+ 		if (tx_desc->flags & DP_TX_DESC_FLAG_OPT_DP_CTRL) {
+@@ -455,9 +461,10 @@
+ 						tx_status,
+ 						pdev->enhanced_stats_en);
+ 
+-		dp_tx_comp_process_tx_status(soc, tx_desc, &ts, txrx_peer,
+-					     ring_id);
+-		dp_tx_comp_process_desc(soc, tx_desc, &ts, txrx_peer);
++		dp_tx_comp_process_tx_status_n_desc_wrapper(soc, vdev, tx_desc,
++							    &ts, txrx_peer,
++							    ring_id);
++
+ 		if (tx_desc->flags & DP_TX_DESC_FLAG_COMPLETED_TX)
+ 			dp_tx_comp_free_buf(soc, tx_desc, false);
+ 		dp_tx_desc_release(soc, tx_desc, tx_desc->pool_id);
+@@ -1692,9 +1699,10 @@
+ 		hal_tx_desc_set_to_fw(hal_tx_desc_cached, 1);
+ 
+ 	/* verify checksum offload configuration*/
+-	if ((qdf_nbuf_get_tx_cksum(tx_desc->nbuf) ==
+-				   QDF_NBUF_TX_CKSUM_TCP_UDP) ||
+-	      qdf_nbuf_is_tso(tx_desc->nbuf)) {
++	if (vdev->opmode != wlan_op_mode_passthru &&
++	    ((qdf_nbuf_get_tx_cksum(tx_desc->nbuf) ==
++				    QDF_NBUF_TX_CKSUM_TCP_UDP) ||
++	     qdf_nbuf_is_tso(tx_desc->nbuf))) {
+ 		hal_tx_desc_set_l3_checksum_en(hal_tx_desc_cached, 1);
+ 		hal_tx_desc_set_l4_checksum_en(hal_tx_desc_cached, 1);
+ 	}
+@@ -1883,7 +1891,8 @@
+ 	bank_config->link_meta_swap = 0;
+ 
+ 	if ((vdev->search_type == HAL_TX_ADDR_INDEX_SEARCH) &&
+-	    vdev->opmode == wlan_op_mode_sta) {
++	    (vdev->opmode == wlan_op_mode_sta ||
++	     vdev->opmode == wlan_op_mode_passthru)) {
+ 		bank_config->index_lookup_enable = 1;
+ 		bank_config->mcast_pkt_ctrl = HAL_TX_MCAST_CTRL_MEC_NOTIFY;
+ 		bank_config->addrx_en = 0;
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_main.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_main.c
+@@ -5037,8 +5037,14 @@
+ 		return QDF_STATUS_E_FAILURE;
+ 	}
+ 
+-	vdev->tx_encap_type = wlan_cfg_pkt_type(soc->wlan_cfg_ctx);
+-	vdev->rx_decap_type = wlan_cfg_pkt_type(soc->wlan_cfg_ctx);
++	if (vdev->opmode != wlan_op_mode_passthru) {
++		vdev->tx_encap_type = wlan_cfg_pkt_type(soc->wlan_cfg_ctx);
++		vdev->rx_decap_type = wlan_cfg_pkt_type(soc->wlan_cfg_ctx);
++	} else {
++		vdev->tx_encap_type = htt_cmn_pkt_type_raw;
++		vdev->rx_decap_type = htt_cmn_pkt_type_raw;
++	}
++
+ 	vdev->dscp_tid_map_id = 0;
+ 	vdev->mcast_enhancement_en = 0;
+ 	vdev->igmp_mcast_enhanc_en = 0;
+@@ -5114,6 +5120,9 @@
+ 		 (vdev->opmode == wlan_op_mode_ap)) {
+ 		ctx->tx = dp_tx_send_vdev_id_check;
+ 		ctx->tx_fast = dp_tx_send_vdev_id_check;
++	} else if (vdev->opmode == wlan_op_mode_passthru) {
++		ctx->tx = dp_tx_send_passthru;
++		ctx->tx_fast = soc->arch_ops.dp_tx_send_fast;
+ 	} else {
+ 		ctx->tx = dp_tx_send;
+ 		ctx->tx_fast = soc->arch_ops.dp_tx_send_fast;
+@@ -9285,6 +9294,19 @@
+ 	return QDF_STATUS_SUCCESS;
+ }
+ 
++#ifdef DRIVER_PASSTHRU_MODE
++static inline
++void dp_set_passthru_vdev_freq(struct dp_vdev *vdev, qdf_freq_t freq)
++{
++	vdev->passthru_freq = freq;
++}
++#else
++static inline
++void dp_set_passthru_vdev_freq(struct dp_vdev *vdev, qdf_freq_t freq)
++{
++}
++#endif
++
+ /**
+  * dp_set_vdev_param() - function to set parameters in vdev
+  * @cdp_soc: DP soc handle
+@@ -9478,6 +9500,11 @@
+ 			   vdev, vdev->vdev_id);
+ 		vdev->eapol_over_control_port_disable =
+ 				val.cdp_eapol_over_control_port_disable;
++		break;
++	case CDP_VDEV_SET_PASSTHRU_FREQ:
++		if (vdev->opmode == wlan_op_mode_passthru)
++			dp_set_passthru_vdev_freq(vdev,
++						  val.cdp_passthru_vdev_freq);
+ 		break;
+ 	default:
+ 		break;
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_peer.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_peer.c
+@@ -3069,18 +3069,18 @@
+ 
+ 		if (peer) {
+ 			bool peer_map = true;
+-
+ 			/* Updating ast_hash and ast_idx in peer level */
+ 			peer->ast_hash = ast_hash;
+ 			peer->ast_idx = hw_peer_id;
+ 			vdev = peer->vdev;
+ 			/* Only check for STA Vdev and peer is not for TDLS */
+-			if (wlan_op_mode_sta == vdev->opmode &&
+-			    !peer->is_tdls_peer) {
++			if ((wlan_op_mode_sta == vdev->opmode &&
++			     !peer->is_tdls_peer) ||
++			    vdev->opmode == wlan_op_mode_passthru) {
+ 				if (qdf_mem_cmp(peer->mac_addr.raw,
+ 						vdev->mac_addr.raw,
+ 						QDF_MAC_ADDR_SIZE) != 0) {
+-					dp_info("%pK: STA vdev bss_peer", soc);
++					dp_info("%pK: vdev bss_peer", soc);
+ 					peer->bss_peer = 1;
+ 					if (peer->txrx_peer)
+ 						peer->txrx_peer->bss_peer = 1;
+@@ -3088,11 +3088,11 @@
+ 
+ 				dp_info("bss ast_hash 0x%x, ast_index 0x%x",
+ 					ast_hash, hw_peer_id);
++
+ 				vdev->bss_ast_hash = ast_hash;
+ 				vdev->bss_ast_idx = hw_peer_id;
+ 
+-				dp_tx_ppeds_cfg_astidx_cache_mapping(soc, vdev,
+-								     peer_map);
++				dp_tx_ppeds_cfg_astidx_cache_mapping(soc, vdev, peer_map);
+ 			}
+ 
+ 			/* Add ast entry incase self ast entry is
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_rx.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_rx.c
+@@ -1170,6 +1170,59 @@
+ 
+ qdf_export_symbol(__dp_rx_buffers_replenish);
+ 
++#ifdef DRIVER_PASSTHRU_MODE
++#define DP_NORMALIZED_NOISE_FLOOR (-96)
++
++static
++int dp_rx_deliver_raw_passthru(struct dp_soc *soc, struct dp_vdev *vdev,
++			       qdf_nbuf_t nbuf)
++{
++	uint8_t *rx_pkt_tlvs;
++	struct mon_rx_status rx_status = {0};
++	uint8_t l3_pad = QDF_NBUF_CB_RX_PACKET_L3_HDR_PAD(nbuf);
++
++	qdf_nbuf_push_head(nbuf, l3_pad + soc->rx_pkt_tlv_size);
++	rx_pkt_tlvs = qdf_nbuf_data(nbuf);
++	qdf_nbuf_pull_head(nbuf, l3_pad + soc->rx_pkt_tlv_size);
++
++	rx_status.tsft = qdf_get_log_timestamp();
++	rx_status.rs_fcs_err = hal_rx_tlv_mpdu_fcs_err_get(soc->hal_soc,
++							   rx_pkt_tlvs);
++	rx_status.mon_fcs_cap = 1;
++	rx_status.rssi_comb = hal_rx_tlv_get_user_rssi(soc->hal_soc,
++						       rx_pkt_tlvs);
++	rx_status.chan_noise_floor = DP_NORMALIZED_NOISE_FLOOR;
++	rx_status.nr_ant = hal_rx_msdu_start_nss_get(soc->hal_soc,
++						     rx_pkt_tlvs);
++	rx_status.chan_freq = vdev->passthru_freq;
++
++	rx_status.preamble_type = hal_rx_tlv_get_pkt_type(soc->hal_soc,
++							  rx_pkt_tlvs);
++	if (rx_status.preamble_type != HAL_DOT11B)
++		rx_status.ofdm_flag = 1;
++	else
++		rx_status.cck_flag = 1;
++
++	if (!qdf_nbuf_update_radiotap(&rx_status, nbuf, qdf_nbuf_headroom(nbuf))) {
++		qdf_nbuf_free(nbuf);
++		return 0;
++	}
++	if (vdev->osif_rx)
++		vdev->osif_rx(vdev->osif_vdev, nbuf);
++	else
++		qdf_nbuf_free(nbuf);
++
++	return 0;
++}
++#else
++static
++int dp_rx_deliver_raw_passthru(struct dp_soc *soc, struct dp_vdev *vdev,
++			       qdf_nbuf_t nbuf)
++{
++	return -EINVAL;
++}
++#endif
++
+ void
+ dp_rx_deliver_raw(struct dp_vdev *vdev, qdf_nbuf_t nbuf_list,
+ 		  struct dp_txrx_peer *txrx_peer, uint8_t link_id)
+@@ -1182,12 +1235,25 @@
+ 	while (nbuf) {
+ 		qdf_nbuf_t next = qdf_nbuf_next(nbuf);
+ 
++		if (vdev->opmode == wlan_op_mode_passthru) {
++			if (next)
++				qdf_nbuf_set_next(nbuf, NULL);
++
++			dp_rx_deliver_raw_passthru(vdev->pdev->soc, vdev, nbuf);
++
++			if (next)
++				goto next_nbuf;
++
++			return;
++		}
++
+ 		DP_RX_LIST_APPEND(deliver_list_head, deliver_list_tail, nbuf);
+ 
+ 		DP_STATS_INC(vdev->pdev, rx_raw_pkts, 1);
+ 		DP_PEER_PER_PKT_STATS_INC_PKT(txrx_peer, rx.raw, 1,
+ 					      qdf_nbuf_len(nbuf), link_id);
+ 
++next_nbuf:
+ 		nbuf = next;
+ 	}
+ 
+@@ -1701,10 +1767,25 @@
+ 
+ 	qdf_spin_lock_bh(&pdev->vdev_list_lock);
+ 	DP_PDEV_ITERATE_VDEV_LIST(pdev, vdev) {
+-		if (qdf_mem_cmp(wh->i_addr1, vdev->mac_addr.raw,
++		if (vdev->opmode != wlan_op_mode_passthru &&
++		    qdf_mem_cmp(wh->i_addr1, vdev->mac_addr.raw,
+ 				QDF_MAC_ADDR_SIZE) == 0) {
+ 			qdf_spin_unlock_bh(&pdev->vdev_list_lock);
+ 			goto out;
++		} else if (vdev->opmode == wlan_op_mode_passthru) {
++			uint32_t l3_hdr_pad;
++
++			qdf_spin_unlock_bh(&pdev->vdev_list_lock);
++
++			l3_hdr_pad =
++				hal_rx_msdu_end_l3_hdr_padding_get(soc->hal_soc,
++								   rx_tlv_hdr);
++
++			dp_rx_skip_tlvs(soc, mpdu, l3_hdr_pad);
++			if (dp_rx_deliver_raw_passthru(soc, vdev, mpdu))
++				goto free;
++			else
++				return 0;
+ 		}
+ 	}
+ 	qdf_spin_unlock_bh(&pdev->vdev_list_lock);
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_stats.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_stats.c
+@@ -11669,7 +11669,8 @@
+ 	uint8_t field = 0;
+ 
+ 	if (!vdev->dp_proto_stats ||
+-			qdf_unlikely(qdf_nbuf_is_nonlinear((nbuf))))
++	    vdev->opmode == wlan_op_mode_passthru ||
++	    qdf_unlikely(qdf_nbuf_is_nonlinear((nbuf))))
+ 		return;
+ 
+ 	field = dp_get_l3_protocol_type(NULL, nbuf, NULL, 0);
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_tx.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_tx.c
+@@ -55,6 +55,9 @@
+ #endif
+ #ifdef WLAN_SUPPORT_LAPB
+ #include "wlan_dp_lapb_flow.h"
++#endif
++#ifdef DRIVER_PASSTHRU_MODE
++#include "qdf_wondertap.h"
+ #endif
+ 
+ /* Flag to skip CCE classify when mesh or tid override enabled */
+@@ -1305,7 +1308,8 @@
+ 
+ 	/* Initialize the SW tx descriptor */
+ 	tx_desc->nbuf = nbuf;
+-	tx_desc->frm_type = dp_tx_frm_std;
++	tx_desc->frm_type = (wlan_op_mode_passthru == vdev->opmode) ?
++				dp_tx_frm_raw : dp_tx_frm_std;
+ 	tx_desc->tx_encap_type = ((tx_exc_metadata &&
+ 		(tx_exc_metadata->tx_encap_type != CDP_INVALID_TX_ENCAP_TYPE)) ?
+ 		tx_exc_metadata->tx_encap_type : vdev->tx_encap_type);
+@@ -6196,7 +6200,7 @@
+ 	qdf_assert(tx_desc);
+ 
+ 	if (!vdev || vdev->delete.pending || !vdev->osif_vdev ||
+-	    !vdev->stats_cb)
++	    !vdev->stats_cb || (vdev->opmode == wlan_op_mode_passthru))
+ 		return;
+ 
+ 	osif_dev = vdev->osif_vdev;
+@@ -6876,10 +6880,10 @@
+ 					       &ts, comp_index);
+ 		comp_index++;
+ 
+-		dp_tx_comp_process_tx_status(soc, desc, &ts, txrx_peer,
+-					     ring_id);
+-
+-		dp_tx_comp_process_desc(soc, desc, &ts, txrx_peer);
++		dp_tx_comp_process_tx_status_n_desc_wrapper(soc,
++							    txrx_peer ? txrx_peer->vdev : NULL,
++							    desc, &ts,
++							    txrx_peer, ring_id);
+ 
+ 		if (qdf_likely(desc->flags & DP_TX_DESC_FLAG_FAST)) {
+ 			dp_tx_nbuf_dev_queue_free(&h, desc);
+@@ -7468,6 +7472,8 @@
+ 
+ 	if (vdev->opmode == wlan_op_mode_sta && !vdev->tdls_link_connected)
+ 		vdev->search_type = soc->sta_mode_search_policy;
++	else if (vdev->opmode == wlan_op_mode_passthru)
++		vdev->search_type = HAL_TX_ADDR_INDEX_SEARCH;
+ 	else
+ 		vdev->search_type = HAL_TX_ADDR_SEARCH_DEFAULT;
+ }
+@@ -8503,3 +8509,229 @@
+ 	hal_tx_comp_get_status(&desc->comp, ts, soc->hal_soc);
+ }
+ #endif /* QCA_DP_OPTIMIZED_TX_DESC */
++
++#if defined(DRIVER_PASSTHRU_MODE)
++/**
++ * dp_tx_set_metadata_passthru() - Set TID for passthrough mode
++ * @vdev: DP vdev handle
++ * @nbuf: Network buffer
++ * @msdu_info: MSDU info structure
++ *
++ * Empty stub function replacing dp_tx_classify_tid() for passthrough mode.
++ * TID classification is not performed in passthrough mode.
++ *
++ * Return: void
++ */
++static inline
++void dp_tx_set_metadata_passthru(struct dp_vdev *vdev, qdf_nbuf_t nbuf,
++				 struct dp_tx_msdu_info_s *msdu_info)
++{
++	qdf_wonder_txd_t *txd;
++
++	/*
++	 * nbuf data would start at the radiotap header so push size
++	 * is just the wonder txd size.
++	 */
++	qdf_nbuf_push_head(nbuf, sizeof(qdf_wonder_txd_t));
++
++	txd = (qdf_wonder_txd_t *)qdf_nbuf_data(nbuf);
++	msdu_info->is_unicast = txd->is_unicast;
++	msdu_info->frame_type = txd->frame_type;
++
++	/*
++	 * ToDo: Abstract the ieee enums for ftype
++	 */
++	if (!msdu_info->is_unicast || txd->tid >= 8)
++		msdu_info->tid = 0;
++	else if (msdu_info->frame_type == IEEE80211_FTYPE_MGMT ||
++		 msdu_info->frame_type == IEEE80211_FTYPE_CTL)
++		msdu_info->tid = 6;
++	else
++		msdu_info->tid = txd->tid;
++
++	qdf_nbuf_pull_head(nbuf, sizeof(qdf_wonder_txd_t));
++}
++
++qdf_nbuf_t dp_tx_send_passthru(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
++			       qdf_nbuf_t nbuf)
++{
++	struct dp_soc *soc = cdp_soc_t_to_dp_soc(soc_hdl);
++	uint16_t peer_id = HTT_INVALID_PEER;
++	struct dp_tx_msdu_info_s msdu_info = {0};
++	struct dp_vdev *vdev = NULL;
++
++	if (qdf_unlikely(vdev_id >= MAX_VDEV_CNT))
++		return nbuf;
++
++	/*
++	 * dp_vdev_get_ref_by_id does does a atomic operation avoid using
++	 * this in per packet path.
++	 *
++	 * As in this path vdev memory is already protected with netdev
++	 * tx lock
++	 */
++	vdev = soc->vdev_id_map[vdev_id];
++	if (qdf_unlikely(!vdev))
++		return nbuf;
++
++	if (qdf_nbuf_len(nbuf) < 8 ||
++	    qdf_nbuf_headroom(nbuf) < sizeof(qdf_wonder_txd_t) ||
++	    qdf_nbuf_get_radiotap_len(nbuf) < 8 ||
++	    qdf_nbuf_get_radiotap_len(nbuf) > qdf_nbuf_len(nbuf) - 2)
++		return nbuf;
++
++	dp_tx_set_metadata_passthru(vdev, nbuf, &msdu_info);
++	dp_tx_get_queue(vdev, nbuf, &msdu_info.tx_queue);
++
++	/* Update protocol stats */
++	dp_tx_update_proto_stats(vdev, nbuf, msdu_info.tx_queue.desc_pool_id,
++				 TX_RECV_FROM_STACK);
++
++	/* Get driver ingress timestamp */
++	dp_tx_get_driver_ingress_ts(vdev, &msdu_info, nbuf);
++
++	/*
++	 * Pull the radiotap header before enqueueing the frame to TCL.
++	 */
++	qdf_nbuf_pull_head(nbuf, qdf_nbuf_get_radiotap_len(nbuf));
++
++	nbuf = dp_tx_send_msdu_single(vdev, nbuf, &msdu_info, peer_id, NULL);
++
++	return nbuf;
++}
++
++void
++dp_tx_comp_process_desc_passthru(struct dp_soc *soc,
++				 struct dp_tx_desc_s *desc,
++				 struct hal_tx_completion_status *ts,
++				 struct dp_txrx_peer *txrx_peer)
++{
++	uint64_t time_latency = 0;
++
++	if (qdf_unlikely(!!desc->pdev->latency_capture_enable)) {
++		time_latency = (qdf_ktime_to_ms(qdf_ktime_real_get()) -
++				qdf_ktime_to_ms(desc->timestamp));
++	}
++
++	if (dp_tx_pkt_tracepoints_enabled())
++		qdf_trace_dp_packet(desc->nbuf, QDF_TX,
++				    desc->msdu_ext_desc ?
++				    desc->msdu_ext_desc->tso_desc : NULL,
++				    qdf_ktime_to_us(desc->timestamp),
++				    desc->tx_status);
++
++
++	desc->flags |= DP_TX_DESC_FLAG_COMPLETED_TX;
++}
++
++static atomic64_t opairshare_tx_all = ATOMIC64_INIT(0);
++static atomic64_t opairshare_tx_ok = ATOMIC64_INIT(0);
++
++u64 opairshare_passthru_tx_count(bool success_only)
++{
++	return atomic64_read(success_only ? &opairshare_tx_ok : &opairshare_tx_all);
++}
++EXPORT_SYMBOL_GPL(opairshare_passthru_tx_count);
++
++void dp_tx_comp_process_tx_status_passthru(struct dp_soc *soc,
++					   struct dp_tx_desc_s *tx_desc,
++					   struct hal_tx_completion_status *ts,
++					   struct dp_txrx_peer *txrx_peer,
++					   uint8_t ring_id)
++{
++	uint32_t length;
++	struct dp_vdev *vdev = NULL;
++	qdf_nbuf_t nbuf = tx_desc->nbuf;
++	enum qdf_dp_tx_rx_status dp_status;
++	uint8_t link_id = 0;
++	enum QDF_OPMODE op_mode = QDF_MAX_NO_OF_MODE;
++
++	atomic64_inc(&opairshare_tx_all);
++	if (ts->status == HAL_TX_TQM_RR_FRAME_ACKED)
++		atomic64_inc(&opairshare_tx_ok);
++
++	if (!nbuf) {
++		dp_info_rl("invalid tx descriptor. nbuf NULL");
++		goto out;
++	}
++
++	length = dp_tx_get_pkt_len(tx_desc);
++
++	dp_status = dp_tx_hw_to_qdf(ts->status);
++	if (soc->dp_debug_log_en) {
++		dp_tx_comp_debug("--------------------\n"
++				 "Tx Completion Stats:\n"
++				 "--------------------\n"
++				 "ack_frame_rssi = %d\n"
++				 "first_msdu = %d\n"
++				 "last_msdu = %d\n"
++				 "msdu_part_of_amsdu = %d\n"
++				 "rate_stats valid = %d\n"
++				 "bw = %d\n"
++				 "pkt_type = %d\n"
++				 "stbc = %d\n"
++				 "ldpc = %d\n"
++				 "sgi = %d\n"
++				 "mcs = %d\n"
++				 "ofdma = %d\n"
++				 "tones_in_ru = %d\n"
++				 "tsf = %d\n"
++				 "ppdu_id = %d\n"
++				 "transmit_cnt = %d\n"
++				 "tid = %d\n"
++				 "peer_id = %d\n"
++				 "tx_status = %d\n"
++				 "tx_release_source = %d\n",
++				 ts->ack_frame_rssi, ts->first_msdu,
++				 ts->last_msdu, ts->msdu_part_of_amsdu,
++				 ts->valid, ts->bw, ts->pkt_type, ts->stbc,
++				 ts->ldpc, ts->sgi, ts->mcs, ts->ofdma,
++				 ts->tones_in_ru, ts->tsf, ts->ppdu_id,
++				 ts->transmit_cnt, ts->tid, ts->peer_id,
++				 ts->status, ts->release_src);
++	}
++
++	/* Update SoC level stats */
++	DP_STATS_INCC(soc, tx.dropped_fw_removed, 1,
++		      (ts->status == HAL_TX_TQM_RR_REM_CMD_REM));
++
++	if (!txrx_peer) {
++		/* PASSTHRU: Skip dp_tx_comp_set_nbuf_band() */
++		dp_info_rl("peer is null or deletion in progress");
++		DP_STATS_INC_PKT(soc, tx.tx_invalid_peer, 1, length);
++
++		vdev = dp_vdev_get_ref_by_id(soc, tx_desc->vdev_id,
++					     DP_MOD_ID_CDP);
++		if (qdf_likely(vdev)) {
++			op_mode = vdev->qdf_opmode;
++			dp_vdev_unref_delete(soc, vdev, DP_MOD_ID_CDP);
++		}
++
++		goto out_log;
++	}
++	vdev = txrx_peer->vdev;
++
++	link_id = dp_tx_get_link_id_from_ppdu_id(soc, ts, txrx_peer, vdev);
++
++	dp_tx_set_nbuf_band(nbuf, txrx_peer, link_id);
++
++	op_mode = vdev->qdf_opmode;
++
++	/* check tx complete notification */
++	if (qdf_nbuf_tx_notify_comp_get(nbuf))
++		dp_tx_notify_completion(soc, vdev, tx_desc,
++					nbuf, ts->status);
++
++	dp_tx_update_peer_stats(tx_desc, ts, txrx_peer, ring_id, link_id);
++
++out_log:
++	DPTRACE(qdf_dp_trace_ptr(tx_desc->nbuf,
++		QDF_DP_TRACE_LI_DP_FREE_PACKET_PTR_RECORD,
++		QDF_TRACE_DEFAULT_PDEV_ID,
++		qdf_nbuf_data_addr(nbuf),
++		sizeof(qdf_nbuf_data(nbuf)),
++		tx_desc->id, ts->status, dp_status, op_mode));
++out:
++	return;
++}
++#endif /* DRIVER_PASSTHRU_MODE */
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_tx.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_tx.h
+@@ -267,6 +267,10 @@
+ #ifdef IPA_OPT_WIFI_DP_CTRL
+ 	bool is_opt_dp_ctrl;
+ #endif
++#ifdef DRIVER_PASSTHRU_MODE
++	bool is_unicast;
++	uint8_t frame_type;
++#endif
+ };
+ 
+ #ifndef QCA_HOST_MODE_WIFI_DISABLED
+@@ -624,6 +628,97 @@
+  */
+ qdf_nbuf_t dp_tx_send(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
+ 		      qdf_nbuf_t nbuf);
++
++#ifdef DRIVER_PASSTHRU_MODE
++/**
++ * dp_tx_send_passthru() - Simplified TX send function for passthrough mode
++ * @soc_hdl: CDP SoC handle
++ * @vdev_id: Virtual device ID
++ * @nbuf: Network buffer to transmit
++ *
++ * This is a simplified version of dp_tx_send() specifically designed for
++ * passthrough mode. It eliminates many checks and processing steps that
++ * are not needed in passthrough mode.
++ *
++ * Return: Network buffer on error, NULL on success
++ */
++qdf_nbuf_t dp_tx_send_passthru(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
++			       qdf_nbuf_t nbuf);
++
++/**
++ * dp_tx_comp_process_desc_passthru() - Process tx descriptor and free
++ *  associated nbuf
++ * @soc: DP Soc handle
++ * @desc: software Tx descriptor
++ * @ts: Tx completion status from HAL/HTT descriptor
++ * @txrx_peer: DP peer context
++ *
++ * Return: none
++ */
++void dp_tx_comp_process_desc_passthru(struct dp_soc *soc,
++				      struct dp_tx_desc_s *desc,
++				      struct hal_tx_completion_status *ts,
++				      struct dp_txrx_peer *txrx_peer);
++
++/**
++ * dp_tx_comp_process_tx_status_passthru() - Process TX completion status
++ * in passthrough mode
++ * @soc: DP soc handle
++ * @tx_desc: TX descriptor
++ * @ts: TX completion status from HAL
++ * @txrx_peer: DP peer handle
++ * @ring_id: Completion ring ID
++ *
++ * This is a streamlined version of dp_tx_comp_process_tx_status() optimized
++ * for passthrough mode. It skips various statistics collection and monitoring
++ * functions to reduce processing overhead.
++ *
++ * Return: None
++ */
++void dp_tx_comp_process_tx_status_passthru(struct dp_soc *soc,
++					   struct dp_tx_desc_s *tx_desc,
++					   struct hal_tx_completion_status *ts,
++					   struct dp_txrx_peer *txrx_peer,
++					   uint8_t ring_id);
++
++static inline
++void dp_tx_comp_process_tx_status_n_desc_wrapper(struct dp_soc *soc,
++						 struct dp_vdev *vdev,
++						 struct dp_tx_desc_s *tx_desc,
++						 struct hal_tx_completion_status *ts,
++						 struct dp_txrx_peer *txrx_peer,
++						 uint8_t ring_id)
++{
++	if (qdf_unlikely(vdev && vdev->opmode == wlan_op_mode_passthru)) {
++		dp_tx_comp_process_tx_status_passthru(soc, tx_desc, ts,
++						      txrx_peer, ring_id);
++		dp_tx_comp_process_desc_passthru(soc, tx_desc, ts, txrx_peer);
++		return;
++	}
++
++	dp_tx_comp_process_tx_status(soc, tx_desc, ts, txrx_peer, ring_id);
++	dp_tx_comp_process_desc(soc, tx_desc, ts, txrx_peer);
++}
++#else
++static inline
++qdf_nbuf_t dp_tx_send_passthru(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
++			       qdf_nbuf_t nbuf)
++{
++	return nbuf;
++}
++
++static inline
++void dp_tx_comp_process_tx_status_n_desc_wrapper(struct dp_soc *soc,
++						 struct dp_vdev *vdev,
++						 struct dp_tx_desc_s *tx_desc,
++						 struct hal_tx_completion_status *ts,
++						 struct dp_txrx_peer *txrx_peer,
++						 uint8_t ring_id)
++{
++	dp_tx_comp_process_tx_status(soc, tx_desc, ts, txrx_peer, ring_id);
++	dp_tx_comp_process_desc(soc, tx_desc, ts, txrx_peer);
++}
++#endif
+ 
+ /**
+  * dp_tx_send_vdev_id_check() - Transmit a frame on a given VAP in special
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_types.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/wifi3.0/dp_types.h
+@@ -4710,6 +4710,9 @@
+ 	bool dp_eapol_stats;
+ 	/* Tx NSS stats received from FW */
+ 	struct cdp_htt_stats_tx_vdev_nss_tlv tx_vdev_nss;
++#ifdef DRIVER_PASSTHRU_MODE
++	qdf_freq_t passthru_freq;
++#endif
+ };
+ 
+ enum {
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/hal/wifi3.0/hal_internal.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/hal/wifi3.0/hal_internal.h
+@@ -1517,6 +1517,9 @@
+ 						    uint8_t reo_dest_ind);
+ 	uint16_t (*hal_srng_dst_get_num_avail_words)(
+ 			hal_ring_handle_t hal_ring_hdl);
++#ifdef DRIVER_PASSTHRU_MODE
++	uint32_t (*hal_rx_tlv_get_rssi)(uint8_t *buf);
++#endif
+ };
+ 
+ /**
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/hal/wifi3.0/hal_rx.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/hal/wifi3.0/hal_rx.h
+@@ -3278,4 +3278,17 @@
+ 	return hal_soc->ops->hal_rx_get_phy_ppdu_id_size();
+ }
+ 
++#ifdef DRIVER_PASSTHRU_MODE
++static inline
++uint32_t hal_rx_tlv_get_user_rssi(hal_soc_handle_t hal_soc_hdl,
++				  uint8_t *rx_pkt_tlv)
++{
++	struct hal_soc *hal_soc = (struct hal_soc *)hal_soc_hdl;
++
++	if (hal_soc->ops->hal_rx_tlv_get_rssi)
++		return hal_soc->ops->hal_rx_tlv_get_rssi(rx_pkt_tlv);
++
++	return 0;
++}
++#endif
+ #endif /* _HAL_RX_H */
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/hal/wifi3.0/kiwi/hal_kiwi.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/hal/wifi3.0/kiwi/hal_kiwi.c
+@@ -2324,6 +2324,17 @@
+ 
+ 	return SRNG_MS(SRNG_DST_HW_FLD(STATUS, NUM_AVAIL_WORDS), ring_status);
+ }
++
++#ifdef DRIVER_PASSTHRU_MODE
++static inline void hal_hw_attach_get_rssi_op(struct hal_soc *hal_soc)
++{
++	hal_soc->ops->hal_rx_tlv_get_rssi = hal_rx_tlv_get_rssi_be;
++}
++#else
++static inline void hal_hw_attach_get_rssi_op(struct hal_soc *hal_soc)
++{
++}
++#endif
+ 
+ static void hal_hw_txrx_ops_attach_kiwi(struct hal_soc *hal_soc)
+ {
+@@ -2609,6 +2620,7 @@
+ 				hal_rx_flow_cmem_update_reo_dst_ind_kiwi;
+ 	hal_soc->ops->hal_srng_dst_get_num_avail_words =
+ 				hal_srng_dst_get_num_avail_words_kiwi;
++	hal_hw_attach_get_rssi_op(hal_soc);
+ };
+ 
+ struct hal_hw_srng_config hw_srng_table_kiwi[] = {
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/hal/wifi3.0/peach/hal_peach.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/hal/wifi3.0/peach/hal_peach.c
+@@ -2465,6 +2465,17 @@
+ 
+ 	return SRNG_MS(SRNG_DST_HW_FLD(STATUS, NUM_AVAIL_WORDS), ring_status);
+ }
++
++#ifdef DRIVER_PASSTHRU_MODE
++static inline void hal_hw_attach_get_rssi_op(struct hal_soc *hal_soc)
++{
++	hal_soc->ops->hal_rx_tlv_get_rssi = hal_rx_tlv_get_rssi_be;
++}
++#else
++static inline void hal_hw_attach_get_rssi_op(struct hal_soc *hal_soc)
++{
++}
++#endif
+ 
+ static void hal_hw_txrx_ops_attach_peach(struct hal_soc *hal_soc)
+ {
+@@ -2757,6 +2768,7 @@
+ 				hal_rx_flow_cmem_update_reo_dst_ind;
+ 	hal_soc->ops->hal_srng_dst_get_num_avail_words =
+ 				hal_srng_dst_get_num_avail_words_peach;
++	hal_hw_attach_get_rssi_op(hal_soc);
+ };
+ 
+ struct hal_hw_srng_config hw_srng_table_peach[] = {
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/inc/qdf_nbuf.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/inc/qdf_nbuf.h
+@@ -5843,6 +5843,11 @@
+ 	return __qdf_nbuf_get_tcp_hdr_len(nbuf);
+ }
+ 
++static inline void qdf_nbuf_set_mac_header(qdf_nbuf_t nbuf, int offset)
++{
++	__qdf_nbuf_set_mac_header(nbuf, offset);
++}
++
+ static inline bool qdf_nbuf_is_nonlinear(qdf_nbuf_t buf)
+ {
+ 	return __qdf_nbuf_is_nonlinear(buf);
+@@ -5922,6 +5927,14 @@
+  */
+ unsigned int qdf_nbuf_update_radiotap(struct mon_rx_status *rx_status,
+ 				      qdf_nbuf_t nbuf, uint32_t headroom_sz);
++
++/**
++ * qdf_nbuf_get_radiotap_len() - get radiotap header length
++ * @nbuf: Pointer to nbuf
++ *
++ * Return: radiotap length.
++ */
++uint16_t qdf_nbuf_get_radiotap_len(qdf_nbuf_t nbuf);
+ 
+ /**
+  * qdf_nbuf_mark_wakeup_frame() - mark wakeup frame.
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/linux/src/i_qdf_nbuf.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/linux/src/i_qdf_nbuf.h
+@@ -3327,6 +3327,11 @@
+ 	return tcp_hdrlen(skb);
+ }
+ 
++static inline void __qdf_nbuf_set_mac_header(struct sk_buff *skb, int offset)
++{
++	skb_set_mac_header(skb, offset);
++}
++
+ /**
+  * __qdf_nbuf_is_nonlinear() - test whether the nbuf is nonlinear or not
+  * @skb: sk buff
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/obj_mgr/src/wlan_objmgr_vdev_obj.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/cmn_services/obj_mgr/src/wlan_objmgr_vdev_obj.c
+@@ -1009,7 +1009,8 @@
+ 		/* For AP mode, self peer and BSS peer are same */
+ 		if ((opmode == QDF_SAP_MODE) ||
+ 		    (opmode == QDF_P2P_GO_MODE) ||
+-		    (opmode == QDF_NDI_MODE))
++		    (opmode == QDF_NDI_MODE) ||
++		    (opmode == QDF_PASSTHRU_MODE))
+ 			wlan_vdev_set_bsspeer(vdev, peer);
+ 	}
+ 	/* set BSS peer for sta */
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/mlme/include/wlan_vdev_mlme.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/mlme/include/wlan_vdev_mlme.h
+@@ -42,6 +42,7 @@
+ #define WLAN_VDEV_MLME_TYPE_NAN 0x5
+ #define WLAN_VDEV_MLME_TYPE_OCB 0x6
+ #define WLAN_VDEV_MLME_TYPE_NDI 0x7
++#define WLAN_VDEV_MLME_TYPE_PASSTHRU 0x9
+ 
+ /* values for vdev_subtype */
+ #define WLAN_VDEV_MLME_SUBTYPE_UNKNOWN   0x0
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/mlme/vdev_mgr/dispatcher/inc/wlan_vdev_mgr_api.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/mlme/vdev_mgr/dispatcher/inc/wlan_vdev_mgr_api.h
+@@ -34,4 +34,14 @@
+  */
+ void wlan_vdev_mgr_get_param_bssid(struct wlan_objmgr_vdev *vdev,
+ 				   uint8_t *bssid);
++
++/**
++ * wlan_vdev_mgr_set_param_bssid() - component MLME API to
++ * set bssid in mlme vdev mgr component
++ * @vdev: pointer to vdev object
++ * @bssid: pointer to the bssid
++ *
++ */
++QDF_STATUS wlan_vdev_mgr_set_param_bssid(struct wlan_objmgr_vdev *vdev,
++					 const uint8_t *bssid);
+ #endif
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/mlme/vdev_mgr/dispatcher/src/wlan_vdev_mgr_api.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/mlme/vdev_mgr/dispatcher/src/wlan_vdev_mgr_api.c
+@@ -47,3 +47,30 @@
+ }
+ 
+ qdf_export_symbol(wlan_vdev_mgr_get_param_bssid);
++
++QDF_STATUS wlan_vdev_mgr_set_param_bssid(struct wlan_objmgr_vdev *vdev,
++					 const uint8_t *bssid)
++{
++	struct vdev_mlme_mgmt *mlme_mgmt;
++	struct vdev_mlme_obj *vdev_mlme;
++
++	if (!bssid)
++		return QDF_STATUS_E_INVAL;
++
++	vdev_mlme = wlan_objmgr_vdev_get_comp_private_obj(
++						vdev, WLAN_UMAC_COMP_MLME);
++
++	if (!vdev_mlme) {
++		mlme_err("VDEV_MLME is NULL");
++		return QDF_STATUS_E_FAILURE;
++	}
++
++	mlme_mgmt = &vdev_mlme->mgmt;
++
++	qdf_mem_copy(mlme_mgmt->generic.bssid, bssid,
++		     QDF_MAC_ADDR_SIZE);
++
++	return QDF_STATUS_SUCCESS;
++}
++
++qdf_export_symbol(wlan_vdev_mgr_set_param_bssid);
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/mlme/vdev_mgr/dispatcher/src/wlan_vdev_mgr_utils_api.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/umac/mlme/vdev_mgr/dispatcher/src/wlan_vdev_mgr_utils_api.c
+@@ -112,6 +112,9 @@
+ 		break;
+ 	case QDF_NDI_MODE:
+ 		cdp_txrx_opmode = wlan_op_mode_ndi;
++		break;
++	case QDF_PASSTHRU_MODE:
++		cdp_txrx_opmode = wlan_op_mode_passthru;
+ 		break;
+ 	default:
+ 		cdp_txrx_opmode = wlan_op_mode_unknown;
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/utils/host_diag_log/inc/host_diag_core_event.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/utils/host_diag_log/inc/host_diag_core_event.h
+@@ -962,6 +962,7 @@
+  * @WIFI_POWER_EVENT_WAKELOCK_RTPM_TPUT_POLICY: Wakelock for RTPM Tput policy
+  * @WIFI_POWER_EVENT_WAKELOCK_DYN_MAC_ADDR_UPDATE: Dynamic mac addr update
+  * @WIFI_POWER_EVENT_WAKELOCK_OPT_WIFI_DP: OPT_WIFI_DP feature enabled
++ * @WIFI_POWER_EVENT_WAKELOCK_PASSTHRU: Wakelock for Passthrough mode
+  *
+  * Indicates the reason for which the wakelock was taken/released
+  */
+@@ -998,6 +999,7 @@
+ 	WIFI_POWER_EVENT_WAKELOCK_RTPM_TPUT_POLICY,
+ 	WIFI_POWER_EVENT_WAKELOCK_DYN_MAC_ADDR_UPDATE,
+ 	WIFI_POWER_EVENT_WAKELOCK_OPT_WIFI_DP,
++	WIFI_POWER_EVENT_WAKELOCK_PASSTHRU,
+ };
+ 
+ /* The length of interface name should >= IFNAMSIZ */
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_api.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_api.h
+@@ -157,6 +157,7 @@
+ 	CASE_RETURN_STRING(PM_NDI_MODE);
+ 	CASE_RETURN_STRING(PM_NAN_DISC_MODE);
+ 	CASE_RETURN_STRING(PM_LL_LT_SAP_MODE);
++	CASE_RETURN_STRING(PM_PASSTHRU_MODE);
+ 	default:
+ 		return "Unknown";
+ 	}
+@@ -6192,4 +6193,21 @@
+ bool
+ policy_mgr_is_conc_sap_ready_for_mcc_to_scc_trans(
+ 	struct wlan_objmgr_psoc *psoc);
++
++#ifdef DRIVER_PASSTHRU_MODE
++/**
++ * policy_mgr_is_chan_change_allowed_for_passthru() - check if channel change
++ *  is allowed for passthru vdev
++ * @psoc: psoc pointer
++ * @vdev_id: vdev id
++ * @freq: channel frequency
++ * @bw: bandwidth
++ *
++ * Return: true if allowed else false
++ */
++bool
++policy_mgr_is_chan_change_allowed_for_passthru(struct wlan_objmgr_psoc *psoc,
++					       uint8_t vdev_id, uint32_t freq,
++					       enum hw_mode_bandwidth bw);
++#endif
+ #endif /* __WLAN_POLICY_MGR_API_H */
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_public_struct.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_public_struct.h
+@@ -416,6 +416,7 @@
+  * @PM_NDI_MODE: NDI mode
+  * @PM_NAN_DISC_MODE: NAN Discovery mode
+  * @PM_LL_LT_SAP_MODE: Low latency low throughput SAP
++ * @PM_PASSTHRU_MODE: Passthrough mode
+  * @PM_MAX_NUM_OF_MODE: max value place holder
+  */
+ enum policy_mgr_con_mode {
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_core.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_core.c
+@@ -1168,6 +1168,9 @@
+ 	case PM_LL_LT_SAP_MODE:
+ 		count = strlcat(cc_mode, "LT_SAP", length);
+ 		break;
++	case PM_PASSTHRU_MODE:
++		count = strlcat(cc_mode, "PASSTHRU", length);
++		break;
+ 	default:
+ 		policy_mgr_err("unexpected mode %d", mode);
+ 		break;
+@@ -1242,8 +1245,12 @@
+ 	case PM_LL_LT_SAP_MODE:
+ 		count = policy_mgr_dump_current_concurrency_one_connection(
+ 				psoc, cc_mode, length);
+-		count += strlcat(cc_mode, "+LT_SAP",
+-					length);
++		count += strlcat(cc_mode, "+LT_SAP", length);
++		break;
++	case PM_PASSTHRU_MODE:
++		count = policy_mgr_dump_current_concurrency_one_connection(
++				psoc, cc_mode, length);
++		count += strlcat(cc_mode, "+PASSTHRU", length);
+ 		break;
+ 	default:
+ 		policy_mgr_err("unexpected mode %d", mode);
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_get_set_utils.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_get_set_utils.c
+@@ -4238,6 +4238,7 @@
+ 	case QDF_P2P_GO_MODE:
+ 	case QDF_SAP_MODE:
+ 	case QDF_MONITOR_MODE:
++	case QDF_PASSTHRU_MODE:
+ 		pm_ctx->concurrency_mode |= (1 << mode);
+ 		pm_ctx->no_of_open_sessions[mode]++;
+ 		break;
+@@ -4276,6 +4277,7 @@
+ 	case QDF_P2P_GO_MODE:
+ 	case QDF_SAP_MODE:
+ 	case QDF_MONITOR_MODE:
++	case QDF_PASSTHRU_MODE:
+ 		pm_ctx->no_of_open_sessions[mode]--;
+ 		if (!(pm_ctx->no_of_open_sessions[mode]))
+ 			pm_ctx->concurrency_mode &= (~(1 << mode));
+@@ -5603,6 +5605,7 @@
+ 	case QDF_SAP_MODE:
+ 	case QDF_NAN_DISC_MODE:
+ 	case QDF_NDI_MODE:
++	case QDF_PASSTHRU_MODE:
+ 		pm_ctx->no_of_active_sessions[mode]++;
+ 		break;
+ 	default:
+@@ -5846,6 +5849,7 @@
+ 	case QDF_SAP_MODE:
+ 	case QDF_NAN_DISC_MODE:
+ 	case QDF_NDI_MODE:
++	case QDF_PASSTHRU_MODE:
+ 		if (pm_ctx->no_of_active_sessions[mode])
+ 			pm_ctx->no_of_active_sessions[mode]--;
+ 		break;
+@@ -10516,6 +10520,67 @@
+ 	return true;
+ }
+ 
++#ifdef DRIVER_PASSTHRU_MODE
++static bool
++policy_mgr_allow_passthru_concurrency(struct wlan_objmgr_psoc *psoc,
++				      enum policy_mgr_con_mode mode,
++				      uint32_t ch_freq,
++				      struct policy_mgr_pcl_list *pcl)
++{
++	uint32_t list[MAX_NUMBER_OF_CONC_CONNECTIONS];
++	uint32_t conn_count;
++	uint32_t i;
++
++	conn_count =
++		policy_mgr_mode_specific_connection_count(psoc,
++							  PM_PASSTHRU_MODE,
++							  list);
++
++	if (mode != PM_PASSTHRU_MODE && !conn_count)
++		return true;
++
++	if (mode == PM_PASSTHRU_MODE) {
++		if (!pcl || !pcl->pcl_len)
++			return true;
++
++		for (i = 0; i < pcl->pcl_len; i++) {
++			if (pcl->pcl_list[i] == ch_freq) {
++				policy_mgr_debug("Passthrough mode allowed on %dMhz",
++						 ch_freq);
++				return true;
++			}
++		}
++
++		policy_mgr_debug("Passthrough mode not allowed on %dMhz",
++				 ch_freq);
++		return false;
++	}
++
++	/*
++	 * This would only happen for DBS hw as we would reject inital
++	 * STA connection in case of non-DBS hw.
++	 */
++	if (mode == PM_STA_MODE &&
++	    policy_mgr_2_freq_same_mac_in_dbs(psoc,
++					      pm_conc_connection_list[list[0]].freq,
++					      ch_freq)) {
++		policy_mgr_debug("STA CSA to %dMHz not allowed", ch_freq);
++		return false;
++	}
++
++	return true;
++}
++#else
++static inline bool
++policy_mgr_allow_passthru_concurrency(struct wlan_objmgr_psoc *psoc,
++				      enum policy_mgr_con_mode mode,
++				      uint32_t ch_freq,
++				      struct policy_mgr_pcl_list *pcl)
++{
++	return true;
++}
++#endif
++
+ bool policy_mgr_is_concurrency_allowed(struct wlan_objmgr_psoc *psoc,
+ 				       enum policy_mgr_con_mode mode,
+ 				       uint32_t ch_freq,
+@@ -10554,6 +10619,10 @@
+ 	}
+ 
+ 	if (ch_freq) {
++		if (!policy_mgr_allow_passthru_concurrency(psoc, mode, ch_freq,
++							   pcl))
++			return status;
++
+ 		if (wlan_reg_is_5ghz_ch_freq(ch_freq)) {
+ 			qdf_mem_zero(&ch_params, sizeof(ch_params));
+ 			ch_params.ch_width = policy_mgr_get_ch_width(bw);
+@@ -11159,6 +11228,9 @@
+ 	case QDF_NDI_MODE:
+ 		mode = PM_NDI_MODE;
+ 		break;
++	case QDF_PASSTHRU_MODE:
++		mode = PM_PASSTHRU_MODE;
++		break;
+ 	default:
+ 		policy_mgr_debug("Unsupported mode (%d)",
+ 				 device_mode);
+@@ -11191,6 +11263,9 @@
+ 		break;
+ 	case PM_NDI_MODE:
+ 		mode = QDF_NDI_MODE;
++		break;
++	case PM_PASSTHRU_MODE:
++		mode = QDF_PASSTHRU_MODE;
+ 		break;
+ 	default:
+ 		policy_mgr_debug("Unsupported policy mgr mode (%d)",
+@@ -14409,3 +14484,28 @@
+ 	}
+ 	return false;
+ }
++
++#ifdef DRIVER_PASSTHRU_MODE
++bool
++policy_mgr_is_chan_change_allowed_for_passthru(struct wlan_objmgr_psoc *psoc,
++					       uint8_t vdev_id, uint32_t freq,
++					       enum hw_mode_bandwidth bw)
++{
++	struct policy_mgr_conc_connection_info info;
++	uint8_t num_cxn_del = 0;
++	bool allow = false;
++
++	policy_mgr_store_and_del_conn_info_by_vdev_id(psoc,
++						      vdev_id,
++						      &info,
++						      &num_cxn_del);
++
++	allow = policy_mgr_allow_concurrency(psoc, PM_PASSTHRU_MODE, freq, bw,
++					     0, vdev_id);
++
++	if (num_cxn_del)
++		policy_mgr_restore_deleted_conn_info(psoc, &info, num_cxn_del);
++
++	return allow;
++}
++#endif
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_pcl.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/src/wlan_policy_mgr_pcl.c
+@@ -59,6 +59,7 @@
+ 	[PM_P2P_GO_MODE] = {PM_5G,   PM_5G,   PM_5G  },
+ 	[PM_NAN_DISC_MODE] = {PM_5G, PM_5G, PM_5G},
+ 	[PM_LL_LT_SAP_MODE] = {PM_5G, PM_5G, PM_5G},
++	[PM_PASSTHRU_MODE] = {PM_NONE, PM_NONE, PM_NONE},
+ };
+ 
+ pm_dbs_pcl_second_connection_table_type
+@@ -2131,6 +2132,11 @@
+ 			index = PM_NAN_DISC_24_2x2;
+ 	} else if (PM_LL_LT_SAP_MODE == pm_conc_connection_list[0].mode) {
+ 		index = PM_LL_LT_SAP_5_2x2;
++	} else if (PM_PASSTHRU_MODE == pm_conc_connection_list[0].mode) {
++		if (WLAN_REG_IS_24GHZ_CH_FREQ(pm_conc_connection_list[0].freq))
++			index = PM_PASSTHRU_24_1x1_2x2;
++		else
++			index = PM_PASSTHRU_5_1x1_2x2;
+ 	}
+ 
+ 	policy_mgr_debug("mode:%d freq:%d chain:%d index:%d",
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/dp/core/inc/wlan_dp_txrx.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/dp/core/inc/wlan_dp_txrx.h
+@@ -204,6 +204,72 @@
+  */
+ QDF_STATUS
+ dp_start_xmit(struct wlan_dp_link *dp_link, qdf_nbuf_t nbuf);
++
++#if defined(DRIVER_PASSTHRU_MODE)
++/**
++ * dp_start_xmit_passthru() - Transmit function for passthrough mode
++ * @dp_link: DP link handle
++ * @nbuf: network buffer to transmit
++ *
++ * This function is based on dp_start_xmit() but simplified for
++ * passthrough mode:
++ * - Does not set FLAGS_NOTIFY in qdf_nbuf->cb{}
++ * - Does not get pkt_type and eliminates pkt_type comparison logic
++ * - Uses empty functions for timestamp and connectivity stats
++ * - Uses simplified MAC address retrieval for passthrough mode only
++ * - Does not call dp_get_tx_resource()
++ * - Does not check for qdf_nbuf_ipa_owned_get()
++ * - Does not check for TSO or EAPOL
++ * - Eliminates dp_nbuf_nontso_linearize code block
++ * - Does not call dp_fix_broadcast_eapol()
++ * - Eliminates drop_pkt_accounting section
++ *
++ * Return: QDF_STATUS_SUCCESS on success, QDF_STATUS_E_FAILURE on failure
++ */
++QDF_STATUS dp_start_xmit_passthru(struct wlan_dp_link *dp_link,
++				  qdf_nbuf_t nbuf);
++
++/**
++ * dp_rx_packet_cbk_passthru() - Receive packet handler
++ * @dp_link_context: pointer to DP link context
++ * @rx_buf: pointer to rx qdf_nbuf
++ *
++ * Receive callback registered with data path.  DP will call this to notify
++ * when one or more packets were received for a registered
++ * STA.
++ *
++ * Return: QDF_STATUS_E_FAILURE if any errors encountered,
++ *	   QDF_STATUS_SUCCESS otherwise
++ */
++QDF_STATUS dp_rx_packet_cbk_passthru(void *dp_link_context, qdf_nbuf_t rx_buf);
++
++/**
++ * wlan_dp_rx_deliver_to_stack_passthru() - DP helper function to deliver RX
++ *  pkts to stack.
++ * @dp_intf: pointer to DP interface context
++ * @nbuf: pointer to nbuf
++ *
++ * The function calls the appropriate stack function to push to the stack
++ *
++ * Return: QDF_STATUS_E_FAILURE if any errors encountered,
++ *	   QDF_STATUS_SUCCESS otherwise
++ */
++QDF_STATUS wlan_dp_rx_deliver_to_stack_passthru(struct wlan_dp_intf *dp_intf,
++						qdf_nbuf_t nbuf);
++#else
++static inline
++QDF_STATUS dp_start_xmit_passthru(struct wlan_dp_link *dp_link,
++				  qdf_nbuf_t nbuf)
++{
++	return QDF_STATUS_E_NOSUPPORT;
++}
++
++static inline
++QDF_STATUS dp_rx_packet_cbk_passthru(void *dp_link_context, qdf_nbuf_t rx_buf)
++{
++	return QDF_STATUS_E_NOSUPPORT;
++}
++#endif /* DP_PASSTHRU_MODE */
+ 
+ /**
+  * dp_tx_timeout() - DP Tx timeout API
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/dp/core/src/wlan_dp_bus_bandwidth.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/dp/core/src/wlan_dp_bus_bandwidth.c
+@@ -239,6 +239,8 @@
+ 			return BUS_BW_LEVEL_5;
+ 		else
+ 			return (*lkp_table)[QCA_WLAN_802_11_MODE_11AX][tput_level];
++	case QDF_PASSTHRU_MODE:
++		return (*lkp_table)[QCA_WLAN_802_11_MODE_11BE][tput_level];
+ 	default:
+ 		break;
+ 	}
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/dp/core/src/wlan_dp_txrx.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/dp/core/src/wlan_dp_txrx.c
+@@ -760,6 +760,89 @@
+ 	return QDF_STATUS_E_FAILURE;
+ }
+ 
++#ifdef DRIVER_PASSTHRU_MODE
++QDF_STATUS dp_start_xmit_passthru(struct wlan_dp_link *dp_link, qdf_nbuf_t nbuf)
++{
++	struct wlan_dp_intf *dp_intf = dp_link->dp_intf;
++	struct wlan_dp_psoc_context *dp_ctx = dp_intf->dp_ctx;
++	struct dp_tx_rx_stats *stats;
++	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
++	int cpu = qdf_get_smp_processor_id();
++
++	stats = &dp_intf->dp_stats.tx_rx_stats;
++	++stats->per_cpu[cpu].tx_called;
++	stats->cont_txtimeout_cnt = 0;
++
++	if (qdf_unlikely(cds_is_driver_transitioning())) {
++		dp_err_rl("driver is transitioning, drop pkt");
++		goto drop_pkt;
++	}
++
++	if (qdf_unlikely(dp_ctx->is_suspend)) {
++		dp_err_rl("Device is system suspended, drop pkt");
++		goto drop_pkt;
++	}
++
++	/*
++	 * Add SKB to internal tracking table before further processing
++	 * in WLAN driver.
++	 */
++	qdf_net_buf_debug_acquire_skb(nbuf, __FILE__, __LINE__);
++
++	qdf_net_stats_add_tx_bytes(&dp_intf->stats, qdf_nbuf_len(nbuf));
++	qdf_net_stats_add_tx_pkts(&dp_intf->stats, 1);
++	dp_ctx->no_tx_offload_pkt_cnt++;
++
++	QDF_NBUF_CB_TX_PACKET_TRACK(nbuf) = QDF_NBUF_TX_PKT_DATA_TRACK;
++	QDF_NBUF_UPDATE_TX_PKT_COUNT(nbuf, QDF_NBUF_TX_PKT_DP);
++
++	qdf_dp_trace_set_track(nbuf, QDF_TX);
++
++	DPTRACE(qdf_dp_trace(nbuf, QDF_DP_TRACE_TX_PACKET_PTR_RECORD,
++			     QDF_TRACE_DEFAULT_PDEV_ID,
++			     qdf_nbuf_data_addr(nbuf),
++			     sizeof(qdf_nbuf_data(nbuf)),
++			     QDF_TX));
++
++	if (dp_nbuf_nontso_linearize(nbuf) != QDF_STATUS_SUCCESS) {
++		dp_err_rl(" nbuf %pK linearize failed. drop the pkt", nbuf);
++		goto drop_pkt_and_release_nbuf;
++	}
++
++	/*
++	 * If a transmit function is not registered, drop packet
++	 */
++	if (!dp_intf->txrx_ops.tx.tx) {
++		dp_err_rl("TX function not registered by the data path");
++		goto drop_pkt_and_release_nbuf;
++	}
++
++	QDF_NBUF_CB_TX_VDEV_CTX(nbuf) = dp_link->link_id;
++
++	if (dp_intf->txrx_ops.tx.tx(soc, dp_link->link_id, nbuf)) {
++		dp_debug_rl("Failed to send packet from adapter %u",
++			    dp_link->link_id);
++		goto drop_pkt_and_release_nbuf;
++	}
++
++	return QDF_STATUS_SUCCESS;
++
++drop_pkt_and_release_nbuf:
++	qdf_net_buf_debug_release_skb(nbuf);
++drop_pkt:
++	qdf_dp_trace_data_pkt(nbuf, QDF_TRACE_DEFAULT_PDEV_ID,
++			      QDF_DP_TRACE_DROP_PACKET_RECORD, 0,
++			      QDF_TX);
++	qdf_nbuf_kfree(nbuf);
++
++	/* Eliminate drop_pkt_accounting section */
++	qdf_net_stats_inc_tx_dropped(&dp_intf->stats);
++	++stats->per_cpu[cpu].tx_dropped;
++
++	return QDF_STATUS_E_FAILURE;
++}
++#endif /* DRIVER_PASSTHRU_MODE */
++
+ void dp_tx_timeout(struct wlan_dp_intf *dp_intf)
+ {
+ 	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
+@@ -1995,3 +2078,98 @@
+ 	return QDF_STATUS_SUCCESS;
+ }
+ 
++#ifdef DRIVER_PASSTHRU_MODE
++QDF_STATUS wlan_dp_rx_deliver_to_stack_passthru(struct wlan_dp_intf *dp_intf,
++						qdf_nbuf_t nbuf)
++{
++	struct wlan_dp_psoc_context *dp_ctx = dp_intf->dp_ctx;
++
++	dp_intf->dp_stats.tx_rx_stats.rx_non_aggregated++;
++
++	return dp_ctx->dp_ops.dp_nbuf_push_pkt(nbuf, DP_NBUF_PUSH_NAPI);
++}
++
++QDF_STATUS dp_rx_packet_cbk_passthru(void *dp_link_context, qdf_nbuf_t rx_nbuf)
++{
++	struct wlan_dp_intf *dp_intf = NULL;
++	struct wlan_dp_link *dp_link = NULL;
++	struct wlan_dp_psoc_context *dp_ctx = NULL;
++	QDF_STATUS qdf_status = QDF_STATUS_E_FAILURE;
++	qdf_nbuf_t nbuf = NULL;
++	qdf_nbuf_t next = NULL;
++	unsigned int cpu_index;
++	struct dp_tx_rx_stats *stats;
++
++	/* Sanity check on inputs */
++	if (qdf_unlikely((!dp_link_context) || (!rx_nbuf))) {
++		dp_err_rl("Null params being passed");
++		return QDF_STATUS_E_FAILURE;
++	}
++
++	dp_link = (struct wlan_dp_link *)dp_link_context;
++	dp_intf = dp_link->dp_intf;
++	dp_ctx = dp_intf->dp_ctx;
++
++	cpu_index = qdf_get_cpu();
++	stats = &dp_intf->dp_stats.tx_rx_stats;
++
++	next = rx_nbuf;
++
++	while (next) {
++		nbuf = next;
++		next = qdf_nbuf_next(nbuf);
++		qdf_nbuf_set_next(nbuf, NULL);
++
++		wlan_dp_pkt_add_timestamp(dp_intf, QDF_PKT_RX_DRIVER_EXIT,
++					  nbuf);
++
++		qdf_dp_trace_log_pkt(dp_link->link_id, nbuf, QDF_RX,
++				     QDF_TRACE_DEFAULT_PDEV_ID,
++				     dp_intf->device_mode);
++
++		DPTRACE(qdf_dp_trace(nbuf,
++				     QDF_DP_TRACE_RX_PACKET_PTR_RECORD,
++				     QDF_TRACE_DEFAULT_PDEV_ID,
++				     qdf_nbuf_data_addr(nbuf),
++				     sizeof(qdf_nbuf_data(nbuf)), QDF_RX));
++
++		DPTRACE(qdf_dp_trace_data_pkt(nbuf, QDF_TRACE_DEFAULT_PDEV_ID,
++					      QDF_DP_TRACE_RX_PACKET_RECORD,
++					      0, QDF_RX));
++
++		if (dp_rx_pkt_tracepoints_enabled())
++			qdf_trace_dp_packet(nbuf, QDF_RX, NULL, 0, 0);
++
++		qdf_nbuf_set_dev(nbuf, dp_intf->dev);
++		qdf_nbuf_set_protocol(nbuf, htons(ETH_P_802_2));
++		qdf_nbuf_set_mac_header(nbuf, 0);
++		++stats->per_cpu[cpu_index].rx_packets;
++		qdf_net_stats_add_rx_pkts(&dp_intf->stats, 1);
++		/* count aggregated RX frame into stats */
++		qdf_net_stats_add_rx_pkts(&dp_intf->stats,
++					  qdf_nbuf_get_gso_segs(nbuf));
++		qdf_net_stats_add_rx_bytes(&dp_intf->stats,
++					   qdf_nbuf_len(nbuf));
++
++		cds_host_diag_log_work(&dp_ctx->rx_wake_lock,
++				       dp_ctx->dp_cfg.rx_wakelock_timeout,
++				       WIFI_POWER_EVENT_WAKELOCK_HOLD_RX);
++		qdf_wake_lock_timeout_acquire(&dp_ctx->rx_wake_lock,
++					dp_ctx->dp_cfg.rx_wakelock_timeout);
++
++		/* Remove SKB from internal tracking table before submitting
++		 * it to stack
++		 */
++		qdf_net_buf_debug_release_skb(nbuf);
++
++		qdf_status = wlan_dp_rx_deliver_to_stack_passthru(dp_intf,
++								  nbuf);
++
++		if (QDF_IS_STATUS_SUCCESS(qdf_status))
++			++stats->per_cpu[cpu_index].rx_delivered;
++		else
++			++stats->per_cpu[cpu_index].rx_refused;
++	}
++	return QDF_STATUS_SUCCESS;
++}
++#endif /* DRIVER_PASSTHRU_MODE */
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/dp/dispatcher/inc/wlan_dp_ucfg_api.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/dp/dispatcher/inc/wlan_dp_ucfg_api.h
+@@ -473,6 +473,23 @@
+ }
+ #endif
+ 
++#ifdef DRIVER_PASSTHRU_MODE
++/**
++ * ucfg_dp_passthrough_register_txrx_ops() - Register ops for Passthrough
++ *  TX/RX operations
++ * @vdev: vdev mapped to Passthrough mode DP interface
++ *
++ * Return: 0 on success and non zero on failure.
++ */
++QDF_STATUS ucfg_dp_passthrough_register_txrx_ops(struct wlan_objmgr_vdev *vdev);
++#else
++static inline
++QDF_STATUS ucfg_dp_passthrough_register_txrx_ops(struct wlan_objmgr_vdev *vdev)
++{
++	return QDF_STATUS_E_NOSUPPORT;
++}
++#endif
++
+ /**
+  * ucfg_dp_softap_register_txrx_ops() - Register ops for TX/RX operations
+  * @vdev: vdev mapped to SAP mode DP interface
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/dp/dispatcher/src/wlan_dp_ucfg_api.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/dp/dispatcher/src/wlan_dp_ucfg_api.c
+@@ -1435,6 +1435,45 @@
+ 	txrx_ops.vdev_del_notify = wlan_dp_link_cdp_vdev_delete_notification;
+ 	cdp_vdev = cdp_vdev_register(soc, dp_link->link_id,
+ 				     (ol_osif_vdev_handle)dp_link, &txrx_ops);
++	if (!cdp_vdev) {
++		dp_err("vdev register fail");
++		return QDF_STATUS_E_FAILURE;
++	}
++
++	wlan_dp_add_cdp_vdev(dp_link, cdp_vdev);
++	dp_intf->txrx_ops = txrx_ops;
++
++	return QDF_STATUS_SUCCESS;
++}
++#endif
++
++#ifdef DRIVER_PASSTHRU_MODE
++QDF_STATUS ucfg_dp_passthrough_register_txrx_ops(struct wlan_objmgr_vdev *vdev)
++{
++	struct ol_txrx_ops txrx_ops;
++	void *soc = cds_get_context(QDF_MODULE_ID_SOC);
++	struct wlan_dp_intf *dp_intf;
++	struct wlan_dp_link *dp_link;
++	struct cdp_vdev *cdp_vdev = NULL;
++
++	dp_link = dp_get_vdev_priv_obj(vdev);
++	if (unlikely(!dp_link)) {
++		dp_err("DP link not found");
++		return QDF_STATUS_E_INVAL;
++	}
++
++	dp_intf = dp_link->dp_intf;
++	/* Register the vdev transmit and receive functions */
++	qdf_mem_zero(&txrx_ops, sizeof(txrx_ops));
++
++	txrx_ops.rx.rx = dp_rx_packet_cbk_passthru;
++	txrx_ops.vdev_del_notify = wlan_dp_link_cdp_vdev_delete_notification;
++	cdp_vdev = cdp_vdev_register(soc, dp_link->link_id,
++				     (ol_osif_vdev_handle)dp_link, &txrx_ops);
++	if (!(txrx_ops.tx.tx && cdp_vdev)) {
++		dp_err("vdev register fail");
++		return QDF_STATUS_E_FAILURE;
++	}
+ 
+ 	wlan_dp_add_cdp_vdev(dp_link, cdp_vdev);
+ 	dp_intf->txrx_ops = txrx_ops;
+@@ -1540,7 +1579,10 @@
+ 	 */
+ 	tx_dp_link = dp_intf->def_link;
+ 	qdf_atomic_inc(&dp_intf->num_active_task);
+-	status = dp_start_xmit(tx_dp_link, nbuf);
++	if (qdf_likely(wlan_vdev_mlme_get_opmode(vdev) != QDF_PASSTHRU_MODE))
++		status = dp_start_xmit(tx_dp_link, nbuf);
++	else
++		status = dp_start_xmit_passthru(tx_dp_link, nbuf);
+ 	qdf_atomic_dec(&dp_intf->num_active_task);
+ 
+ 	return status;
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/mlme/core/src/wlan_mlme_vdev_mgr_interface.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/mlme/core/src/wlan_mlme_vdev_mgr_interface.c
+@@ -155,7 +155,8 @@
+ 
+ 	if (mlme_is_vdev_in_beaconning_mode(vdev->vdev_mlme.vdev_opmode))
+ 		vdev_mlme->ops = &ap_mlme_ops;
+-	else if (vdev->vdev_mlme.vdev_opmode == QDF_MONITOR_MODE)
++	else if (vdev->vdev_mlme.vdev_opmode == QDF_MONITOR_MODE ||
++		 vdev->vdev_mlme.vdev_opmode == QDF_PASSTHRU_MODE)
+ 		vdev_mlme->ops = &mon_mlme_ops;
+ 	else
+ 		vdev_mlme->ops = &sta_mlme_ops;
+@@ -1560,6 +1561,9 @@
+ 	case QDF_NAN_DISC_MODE:
+ 		*type = WLAN_VDEV_MLME_TYPE_NAN;
+ 		break;
++	case QDF_PASSTHRU_MODE:
++		*type = WLAN_VDEV_MLME_TYPE_PASSTHRU;
++		break;
+ 	default:
+ 		mlme_err("Invalid device mode %d", mode);
+ 		status = QDF_STATUS_E_INVAL;
+@@ -2279,6 +2283,7 @@
+ 
+ 	case WMI_VDEV_TYPE_MONITOR:
+ 	case WMI_VDEV_TYPE_OCB:
++	case WMI_VDEV_TYPE_WIFI_PASSTHRU:
+ 		return true;
+ 
+ 	default:
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/umac/mlme/connection_mgr/dispatcher/inc/wlan_cm_roam_public_struct.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/umac/mlme/connection_mgr/dispatcher/inc/wlan_cm_roam_public_struct.h
+@@ -2393,6 +2393,8 @@
+  * @RSO_NDP_CON_ON_NDI: disable roaming due to NDP connection on NDI
+  * @RSO_SET_PCL: Disable roaming to set pcl to firmware
+  * @RSO_SET_LINK: Avoid enable roaming due to SET_LINK is in progress
++ * @RSO_PASSTHRU_SET_CHANNEL: disable roaming temporarily when set
++ *  set channel operation is ongoing on passthru vdev.
+  */
+ enum wlan_cm_rso_control_requestor {
+ 	RSO_INVALID_REQUESTOR,
+@@ -2403,6 +2405,7 @@
+ 	RSO_NDP_CON_ON_NDI     = BIT(4),
+ 	RSO_SET_PCL            = BIT(5),
+ 	RSO_SET_LINK           = BIT(6),
++	RSO_PASSTHRU_SET_CHANNEL = BIT(7),
+ };
+ #endif
+ 
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_wondertap.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/inc/wlan_hdd_wondertap.h
+@@ -39,6 +39,8 @@
+ 	bool is_frame_filter_set;
+ 	uint8_t frame_filter;
+ 	uint64_t magic;
++	uint8_t vdev_id;
++	bool vdev_is_up;
+ };
+ 
+ /**
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_main.c
+@@ -10529,7 +10529,8 @@
+ 	if (QDF_IS_STATUS_ERROR(status))
+ 		hdd_err_rl("failed to reinit vdev stop event");
+ 
+-	sme_delete_mon_session(hdd_ctx->mac_handle, link_info->vdev_id);
++	sme_delete_pe_session(hdd_ctx->mac_handle, link_info->vdev_id,
++			      QDF_MONITOR_MODE);
+ 
+ 	/* block until vdev stop success*/
+ 	status =
+@@ -19409,8 +19410,9 @@
+ 					   hdd_common_roam_callback);
+ 
+ 	sme_set_roam_scan_ch_event_cb(mac_handle, hdd_get_roam_scan_ch_cb);
+-	status = sme_set_monitor_mode_cb(mac_handle,
+-					 hdd_sme_monitor_mode_callback);
++	status = sme_set_op_mode_cb(mac_handle,
++				    hdd_sme_monitor_mode_callback,
++				    hdd_sme_passthrough_mode_callback);
+ 	if (QDF_IS_STATUS_ERROR(status))
+ 		hdd_err_rl("Register monitor mode callback failed");
+ 
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_tx_rx.c
+@@ -1383,9 +1383,10 @@
+ 		return qdf_status;
+ 	}
+ 
+-	qdf_status = sme_create_mon_session(hdd_ctx->mac_handle,
+-					    sta_desc.peer_addr.bytes,
+-					    link_info->vdev_id);
++	qdf_status = sme_create_pe_session(hdd_ctx->mac_handle,
++					   sta_desc.peer_addr.bytes,
++					   link_info->vdev_id,
++					   QDF_MONITOR_MODE);
+ 	if (QDF_STATUS_SUCCESS != qdf_status) {
+ 		hdd_err("sme_create_mon_session() failed to register. Status= %d [0x%08X]",
+ 			qdf_status, qdf_status);
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_wondertap.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/hdd/src/wlan_hdd_wondertap.c
+@@ -3,6 +3,8 @@
+  * SPDX-License-Identifier: ISC
+  */
+ 
++#include <linux/module.h>
++#include <linux/spinlock.h>
+ #include <wlan_hdd_wondertap.h>
+ #include <wlan_hdd_main.h>
+ #include <osif_psoc_sync.h>
+@@ -19,6 +21,16 @@
+ #include "cdp_txrx_ctrl.h"
+ 
+ static struct hdd_wondertap_context *g_wt_ctx;
++static DEFINE_SPINLOCK(wt_event_lock);
++static struct hdd_wondertap_context *wt_event_ctx;
++
++static void wt_publish_event_ctx(struct hdd_wondertap_context *ctx)
++{
++	unsigned long flags;
++	spin_lock_irqsave(&wt_event_lock, flags);
++	wt_event_ctx = ctx;
++	spin_unlock_irqrestore(&wt_event_lock, flags);
++}
+ 
+ static enum phy_ch_width
+ __wlan_hdd_convert_wt_bandwidth_to_phy_ch_width(qdf_wondertap_rate_bw_t bw)
+@@ -131,6 +143,8 @@
+ 					       WLAN_WONDERTAP_VDEV_OP_TIMEOUT_MS);
+ 	if (QDF_IS_STATUS_ERROR(status)) {
+ 		hdd_err("wondertap vdev up failed:%d", status);
++	} else if (!READ_ONCE(g_wt_ctx->vdev_is_up)) {
++		status = QDF_STATUS_E_FAILURE;
+ 	} else {
+ 		val.cdp_passthru_vdev_freq = params->freq;
+ 		cdp_txrx_set_vdev_param(cds_get_context(QDF_MODULE_ID_SOC),
+@@ -216,6 +230,7 @@
+ void __wlan_hdd_destroy_wondertap_intf(struct hdd_context *hdd_ctx,
+ 				       struct hdd_adapter *adapter)
+ {
++	wt_publish_event_ctx(NULL);
+ 	hdd_close_adapter(hdd_ctx, adapter, true);
+ }
+ 
+@@ -305,6 +320,8 @@
+ 		hdd_err("Failed to start wondertap adapter %d", ret);
+ 		return ret;
+ 	}
++	g_wt_ctx->vdev_id = adapter->deflink->vdev_id;
++	wt_publish_event_ctx(g_wt_ctx);
+ 	set_bit(DEVICE_IFACE_OPENED, &adapter->event_flags);
+ 
+ 	if (!policy_mgr_allow_concurrency(hdd_ctx->psoc,
+@@ -494,6 +511,7 @@
+ 
+ 	if (hdd_get_conparam() != QDF_GLOBAL_MISSION_MODE) {
+ 		hdd_err("Command not allowed in mode:%d", hdd_get_conparam());
++		errno = -EPERM;
+ 		goto destroy_sync;
+ 	}
+ 
+@@ -560,6 +578,8 @@
+ 		goto create_wondertap_intf_failed;
+ 	}
+ 
++	wt_ctx->hdd_ctx = hdd_ctx;
++	wt_ctx->wt_adapter = adapter;
+ 	osif_vdev_sync_register(adapter->dev, vdev_sync);
+ 
+ 	errno = __wlan_hdd_start_wondertap_intf(hdd_ctx, adapter, params);
+@@ -963,11 +983,15 @@
+ 
+ void hdd_sme_passthrough_mode_callback(uint8_t vdev_id, bool is_up)
+ {
+-	hdd_debug("Channel change successful for wondertap");
++	unsigned long flags;
+ 	if (cds_is_driver_recovering())
+ 		return;
+-
+-	qdf_event_set(&g_wt_ctx->wondertap_vdev_event);
++	spin_lock_irqsave(&wt_event_lock, flags);
++	if (wt_event_ctx && wt_event_ctx->vdev_id == vdev_id) {
++		wt_event_ctx->vdev_is_up = is_up;
++		qdf_event_set(&wt_event_ctx->wondertap_vdev_event);
++	}
++	spin_unlock_irqrestore(&wt_event_lock, flags);
+ }
+ 
+ /**
+@@ -998,6 +1022,13 @@
+ 	.wonder_ops = &wlan_drv_wondertap_ops,
+ };
+ 
++/* Temporary hardware probe pins this module through an exported symbol. */
++const struct wondertap_priv *opairshare_wondertap_test_priv(void)
++{
++	return &wlan_drv_wondertap_priv;
++}
++EXPORT_SYMBOL_GPL(opairshare_wondertap_test_priv);
++
+ int wlan_hdd_wondertap_register_ops(struct device *dev)
+ {
+ 	return pld_set_vendor_wonder_priv_data(dev, &wlan_drv_wondertap_priv);
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/inc/sir_api.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/inc/sir_api.h
+@@ -734,6 +734,7 @@
+  * @eSIR_AUTO_MODE: Auto role
+  * @eSIR_MONITOR_MODE: Monitor mode
+  * @eSIR_NDI_MODE: NAN datapath mode
++ * @eSIR_PASSTHRU_MODE: Passthrough mode
+  */
+ enum bss_type {
+ 	eSIR_INFRASTRUCTURE_MODE,
+@@ -741,6 +742,7 @@
+ 	eSIR_AUTO_MODE,
+ 	eSIR_MONITOR_MODE,
+ 	eSIR_NDI_MODE,
++	eSIR_PASSTHRU_MODE,
+ 	eSIR_DONOT_USE_BSS_TYPE = SIR_MAX_ENUM_SIZE
+ };
+ 
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/inc/wni_api.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/inc/wni_api.h
+@@ -218,6 +218,8 @@
+ 	WNI_SME_UPDATE_RNR_IES = SIR_SME_MSG_TYPES_BEGIN + 181,
+ 	WNI_SME_UPDATE_EDCA_PARAMS = SIR_SME_MSG_TYPES_BEGIN + 182,
+ 	eWNI_SME_MONITOR_MODE_VDEV_STOP = SIR_SME_MSG_TYPES_BEGIN + 183,
++	eWNI_SME_PASSTHRU_INIT_SESSION = SIR_SME_MSG_TYPES_BEGIN + 187,
++	eWNI_SME_PASSTHRU_DEINIT_SESSION = SIR_SME_MSG_TYPES_BEGIN + 188,
+ };
+ 
+ typedef struct sAniCfgTxRateCtrs {
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/include/lim_api.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/include/lim_api.h
+@@ -57,6 +57,8 @@
+ #define LIM_IS_P2P_DEVICE_GO(pe_session)     (GET_LIM_SYSTEM_ROLE(pe_session) == eLIM_P2P_DEVICE_GO)
+ #define LIM_IS_NDI_ROLE(pe_session) \
+ 		(GET_LIM_SYSTEM_ROLE(pe_session) == eLIM_NDI_ROLE)
++#define LIM_IS_PASSTHRU_ROLE(pe_session) \
++		(GET_LIM_SYSTEM_ROLE(pe_session) == eLIM_PASSTHRU_ROLE)
+ /* gLimSmeState */
+ #define GET_LIM_SME_STATE(mac)                 (mac->lim.gLimSmeState)
+ #define SET_LIM_SME_STATE(mac, state)          (mac->lim.gLimSmeState = state)
+@@ -1081,4 +1083,43 @@
+ }
+ #endif
+ /************************************************************/
++#ifdef DRIVER_PASSTHRU_MODE
++/**
++ * lim_passthrough_init_session() - Initialize PE session for passthrough mode
++ * @mac_ptr: Pointer to global MAC context
++ * @msg: Pointer to session creation message containing BSSID and vdev ID
++ *
++ * This function creates a new PE session for passthrough mode operation.
++ *
++ * Return: None
++ */
++void lim_passthrough_init_session(struct mac_context *mac_ptr,
++				  struct sir_create_session *msg);
++
++/**
++ * lim_passthrough_deinit_session() - Delete PE session for passthrough mode
++ * @mac_ptr: Pointer to global MAC context
++ * @msg: Pointer to session deletion message containing vdev ID
++ *
++ * This function deletes an existing PE session that was created for
++ * passthrough mode operation. It triggers the VDEV state machine to
++ * transition to DOWN state and then removes the session from PE.
++ *
++ * Return: None
++ */
++void lim_passthrough_deinit_session(struct mac_context *mac_ptr,
++				    struct sir_delete_session *msg);
++#else
++static inline
++void lim_passthrough_init_session(struct mac_context *mac_ptr,
++				  struct sir_create_session *msg)
++{
++}
++
++static inline
++void lim_passthrough_deinit_session(struct mac_context *mac_ptr,
++				    struct sir_delete_session *msg)
++{
++}
++#endif
+ #endif /* __LIM_API_H */
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/include/lim_global.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/include/lim_global.h
+@@ -62,7 +62,8 @@
+ 	eLIM_P2P_DEVICE_ROLE,
+ 	eLIM_P2P_DEVICE_GO,
+ 	eLIM_P2P_DEVICE_CLIENT,
+-	eLIM_NDI_ROLE
++	eLIM_NDI_ROLE,
++	eLIM_PASSTHRU_ROLE
+ } tLimSystemRole;
+ 
+ /*
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_api.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_api.c
+@@ -3648,7 +3648,8 @@
+ 
+ 	session = pe_find_session_by_vdev_id(mac_ptr, msg->vdev_id);
+ 
+-	if (session && session->bssType == eSIR_MONITOR_MODE) {
++	if (session && (session->bssType == eSIR_MONITOR_MODE ||
++			session->bssType == eSIR_PASSTHRU_MODE)) {
+ 		wlan_vdev_mlme_sm_deliver_evt(session->vdev,
+ 					      WLAN_VDEV_SM_EV_DOWN,
+ 					      0, NULL);
+@@ -5172,3 +5173,37 @@
+ 
+ }
+ #endif
++
++#ifdef DRIVER_PASSTHRU_MODE
++void lim_passthrough_init_session(struct mac_context *mac_ptr,
++				  struct sir_create_session *msg)
++{
++	struct pe_session *psession_entry;
++	uint8_t session_id;
++
++	psession_entry = pe_create_session(mac_ptr, msg->bss_id.bytes,
++					   &session_id,
++					   mac_ptr->lim.max_sta_of_pe_session,
++					   eSIR_PASSTHRU_MODE,
++					   msg->vdev_id);
++	if (!psession_entry) {
++		pe_err("Passthrough mode: Session can not be created for: "
++			QDF_MAC_ADDR_FMT, QDF_MAC_ADDR_REF(msg->bss_id.bytes));
++		return;
++	}
++}
++
++void lim_passthrough_deinit_session(struct mac_context *mac_ptr,
++				    struct sir_delete_session *msg)
++{
++	struct pe_session *session;
++
++	session = pe_find_session_by_vdev_id(mac_ptr, msg->vdev_id);
++
++	if (session && LIM_IS_PASSTHRU_ROLE(session)) {
++		wlan_vdev_mlme_sm_deliver_evt(session->vdev,
++					      WLAN_VDEV_SM_EV_DOWN, 0, NULL);
++		pe_delete_session(mac_ptr, session);
++	}
++}
++#endif
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_process_message_queue.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_process_message_queue.c
+@@ -2208,6 +2208,16 @@
+ 		qdf_mem_free((void *)msg->bodyptr);
+ 		msg->bodyptr = NULL;
+ 		break;
++	case eWNI_SME_PASSTHRU_INIT_SESSION:
++		lim_passthrough_init_session(mac_ctx, msg->bodyptr);
++		qdf_mem_free((void *)msg->bodyptr);
++		msg->bodyptr = NULL;
++		break;
++	case eWNI_SME_PASSTHRU_DEINIT_SESSION:
++		lim_passthrough_deinit_session(mac_ctx, msg->bodyptr);
++		qdf_mem_free((void *)msg->bodyptr);
++		msg->bodyptr = NULL;
++		break;
+ 	default:
+ 		qdf_mem_free((void *)msg->bodyptr);
+ 		msg->bodyptr = NULL;
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_process_mlm_rsp_messages.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_process_mlm_rsp_messages.c
+@@ -3305,7 +3305,8 @@
+ {
+ 	struct scheduler_msg message = {0};
+ 
+-	if (session->bssType != eSIR_MONITOR_MODE)
++	if (!(session->bssType == eSIR_MONITOR_MODE ||
++	      session->bssType == eSIR_PASSTHRU_MODE))
+ 		return;
+ 
+ 	if (QDF_IS_STATUS_ERROR(status)) {
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_process_sme_req_messages.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_process_sme_req_messages.c
+@@ -10011,7 +10011,7 @@
+ 	}
+ }
+ 
+-static void lim_mon_change_channel(
++static void lim_non_bss_change_channel(
+ 	struct mac_context *mac_ctx,
+ 	struct pe_session *session_entry)
+ {
+@@ -10036,8 +10036,9 @@
+ 	struct mac_context *mac_ctx,
+ 	struct pe_session *session_entry)
+ {
+-	if (session_entry->bssType == eSIR_MONITOR_MODE)
+-		return lim_mon_change_channel(mac_ctx, session_entry);
++	if (session_entry->bssType == eSIR_MONITOR_MODE ||
++	    session_entry->bssType == eSIR_PASSTHRU_MODE)
++		return lim_non_bss_change_channel(mac_ctx, session_entry);
+ 
+ 	mlme_set_chan_switch_in_progress(session_entry->vdev, true);
+ 
+@@ -10177,6 +10178,37 @@
+ {}
+ #endif
+ 
++#ifdef DRIVER_PASSTHRU_MODE
++/**
++ * lim_send_passthru_channel_change_rsp() - Send Passthru channel change
++ *  response
++ * @session : pointer to PE session
++ *
++ * This function is called to send channel change response for
++ * Passthru interface when the new request matches the existing config.
++ *
++ * Return: None
++ */
++static
++void lim_send_passthru_channel_change_rsp(struct pe_session *session)
++{
++	struct scheduler_msg msg = {0};
++
++	msg.type = eWNI_SME_MONITOR_MODE_VDEV_UP;
++	msg.bodyval = session->vdev_id;
++
++	if (QDF_STATUS_SUCCESS !=
++	    scheduler_post_message(QDF_MODULE_ID_PE,
++				   QDF_MODULE_ID_SME,
++				   QDF_MODULE_ID_SME, &msg))
++		pe_err("Failed to post channel change rsp msg");
++}
++#else
++static inline
++void lim_send_passthru_channel_change_rsp(struct pe_session *session)
++{
++}
++#endif
+ 
+ /**
+  * lim_process_sme_channel_change_request() - process sme ch change req
+@@ -10250,7 +10282,13 @@
+ 						    ch_change_req))) {
+ 		pe_err("Target channel and mode is same as current channel and mode channel freq %d and mode %d",
+ 		       session_entry->curr_op_freq, session_entry->ch_width);
+-		lim_abort_channel_change(mac_ctx, ch_change_req->vdev_id);
++
++		if (LIM_IS_PASSTHRU_ROLE(session_entry))
++			lim_send_passthru_channel_change_rsp(session_entry);
++		else
++			lim_abort_channel_change(mac_ctx,
++						 ch_change_req->vdev_id);
++
+ 		return;
+ 	}
+ 
+@@ -10286,6 +10324,7 @@
+ 			 session_entry->dot11mode);
+ 	} else if (IS_DOT11_MODE_HE(ch_change_req->dot11mode) &&
+ 	     (session_entry->opmode == QDF_MONITOR_MODE ||
++	      session_entry->opmode == QDF_PASSTHRU_MODE ||
+ 	      lim_is_session_he_capable(session_entry))) {
+ 		lim_update_session_he_capable_chan_switch
+ 			(mac_ctx, session_entry, target_freq);
+@@ -10319,6 +10358,7 @@
+ 
+ 	if (IS_DOT11_MODE_EHT(ch_change_req->dot11mode) &&
+ 	    ((QDF_MONITOR_MODE == session_entry->opmode) ||
++	     session_entry->opmode == QDF_PASSTHRU_MODE ||
+ 	     lim_is_session_eht_capable(session_entry))) {
+ 		lim_update_session_eht_capable_chan_switch(
+ 				mac_ctx, session_entry, target_freq);
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_session.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_session.c
+@@ -561,7 +561,7 @@
+ 
+ 	/* Copy the BSSID to the session table */
+ 	sir_copy_mac_addr(session_ptr->bssId, bssid);
+-	if (bssType == eSIR_MONITOR_MODE)
++	if (bssType == eSIR_MONITOR_MODE || bssType == eSIR_PASSTHRU_MODE)
+ 		sir_copy_mac_addr(mac->lim.gpSession[i].self_mac_addr, bssid);
+ 	session_ptr->valid = true;
+ 	/* Initialize the SME and MLM states to IDLE */
+@@ -628,6 +628,9 @@
+ 		lim_get_peer_idxpool_size(numSta, bssType)))
+ 		goto free_session_attrs;
+ 
++	if (eSIR_PASSTHRU_MODE == bssType)
++		session_ptr->limSystemRole = eLIM_PASSTHRU_ROLE;
++
+ 	if (eSIR_INFRASTRUCTURE_MODE == bssType)
+ 		lim_ft_open(mac, &mac->lim.gpSession[i]);
+ 
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_utils.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/pe/lim/lim_utils.c
+@@ -11117,6 +11117,39 @@
+ #else
+ #endif
+ 
++static inline QDF_STATUS
++lim_fill_session_nss_params_on_create(struct mac_context *mac_ctx,
++				      struct pe_session *session)
++{
++	struct vdev_type_nss *vdev_type_nss;
++	enum QDF_OPMODE opmode;
++	enum bss_type bss_type = eSIR_DONOT_USE_BSS_TYPE;
++
++	opmode = wlan_get_opmode_from_vdev_id(mac_ctx->pdev, session->vdev_id);
++	if (opmode == QDF_PASSTHRU_MODE)
++		bss_type = eSIR_PASSTHRU_MODE;
++
++	pe_debug("opmode %d bss_type %d", opmode, bss_type);
++	if (!wlan_reg_is_24ghz_ch_freq(session->curr_op_freq)) {
++		vdev_type_nss = &mac_ctx->vdev_type_nss_5g;
++	} else {
++		vdev_type_nss = &mac_ctx->vdev_type_nss_2g;
++	}
++
++	switch (bss_type) {
++	case eSIR_PASSTHRU_MODE:
++		/* Use STA mode NSS config for PASSTHRU */
++		session->vdev_nss = vdev_type_nss->sta;
++		break;
++	default:
++		/* not used anywhere...used in scan function */
++		break;
++	}
++
++	session->nss = session->vdev_nss;
++	return QDF_STATUS_SUCCESS;
++}
++
+ QDF_STATUS lim_set_session_channel_params(struct mac_context *mac,
+ 					  struct pe_session *session)
+ {
+@@ -11200,6 +11233,9 @@
+ 	session->ch_width = ch_params.ch_width;
+ 	session->ch_center_freq_seg0 = ch_params.center_freq_seg0;
+ 	session->ch_center_freq_seg1 = ch_params.center_freq_seg1;
++
++	if (LIM_IS_PASSTHRU_ROLE(session))
++		lim_fill_session_nss_params_on_create(mac, session);
+ 
+ 	mlme_obj = wlan_vdev_mlme_get_cmpt_obj(session->vdev);
+ 	if (!mlme_obj) {
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/sys/legacy/src/utils/src/mac_trace.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/mac/src/sys/legacy/src/utils/src/mac_trace.c
+@@ -286,6 +286,8 @@
+ 		CASE_RETURN_STRING(eWNI_SME_STA_CSA_CONTINUE_REQ);
+ 		CASE_RETURN_STRING(eWNI_SME_ANTENNA_ISOLATION_RSP);
+ 		CASE_RETURN_STRING(eWNI_SME_CH_SWITCH_STARTED_NOTIFY);
++		CASE_RETURN_STRING(eWNI_SME_PASSTHRU_INIT_SESSION);
++		CASE_RETURN_STRING(eWNI_SME_PASSTHRU_DEINIT_SESSION);
+ 	default:
+ 		return (uint8_t *) "UNKNOWN";
+ 		break;
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/inc/sme_api.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/inc/sme_api.h
+@@ -2226,18 +2226,20 @@
+ #endif /* FEATURE_WLAN_APF */
+ 
+ uint32_t sme_get_wni_dot11_mode(mac_handle_t mac_handle);
+-QDF_STATUS sme_create_mon_session(mac_handle_t mac_handle, uint8_t *bssid,
+-				  uint8_t vdev_id);
+-
+-/**
+- * sme_delete_mon_session() - post message to delete PE session for mon_mode
+- * operation
++
++QDF_STATUS sme_create_pe_session(mac_handle_t mac_handle, uint8_t *bssid,
++				 uint8_t vdev_id, enum QDF_OPMODE op_mode);
++
++/**
++ * sme_delete_pe_session() - post message to delete PE session
+  * @mac_handle: Opaque handle to the global MAC context
+  * @vdev_id: sme session id
++ * @op_mode: vdev operating mode
+  *
+  * Return: QDF_STATUS_SUCCESS on success, non-zero error code on failure.
+  */
+-QDF_STATUS sme_delete_mon_session(mac_handle_t mac_handle, uint8_t vdev_id);
++QDF_STATUS sme_delete_pe_session(mac_handle_t mac_handle, uint8_t vdev_id,
++				 enum QDF_OPMODE op_mode);
+ 
+ /**
+  * sme_set_vdev_ies_per_band() - sends the per band IEs to vdev
+@@ -4766,17 +4768,20 @@
+  */
+ void sme_vdev_del_resp(uint8_t vdev_id);
+ 
+-#ifdef FEATURE_MONITOR_MODE_SUPPORT
+-/**
+- * sme_set_monitor_mode_cb() - Register monitor mode vdev up operation callback
++#if defined(FEATURE_MONITOR_MODE_SUPPORT) || defined(DRIVER_PASSTHRU_MODE)
++/**
++ * sme_set_op_mode_cb() - Register mode specific vdev up operation callback
+  * @mac_handle: Opaque handle to the MAC context
+- * @monitor_mode_cb: callback to be registered
+- *
+- * Return: QDF_STATUS
+- */
+-QDF_STATUS sme_set_monitor_mode_cb(mac_handle_t mac_handle,
+-				   void (*monitor_mode_cb)(uint8_t vdev_id,
+-							   bool is_up));
++ * @monitor_mode_cb: callback to be registered for monitor vdev
++ * @passthrough_mode_cb: callback to be registered for passthrough vdev
++ *
++ * Return: QDF_STATUS
++ */
++QDF_STATUS sme_set_op_mode_cb(mac_handle_t mac_handle,
++			      void (*monitor_mode_cb)(uint8_t vdev_id,
++						      bool is_up),
++			      void (*passthrough_mode_cb)(uint8_t vdev_id,
++							  bool is_up));
+ 
+ /*
+  * sme_process_monitor_mode_vdev_evt() - Handle vdev up completion
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/inc/sme_internal.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/inc/sme_internal.h
+@@ -531,6 +531,9 @@
+ 				      struct wlan_objmgr_vdev *vdev);
+ 	void (*set_disconnect_link_info_cb)(uint8_t vdev_id,
+ 					    bool is_disconnect_sent);
++#ifdef DRIVER_PASSTHRU_MODE
++	void (*passthrough_mode_cb)(uint8_t vdev_id, bool is_up);
++#endif
+ };
+ 
+ #endif /* #if !defined( __SMEINTERNAL_H ) */
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/common/sme_api.c
+@@ -12941,23 +12941,32 @@
+ }
+ 
+ /**
+- * sme_create_mon_session() - post message to create PE session for monitormode
+- * operation
++ * sme_create_pe_session() - post message to create PE session
+  * @mac_handle: Opaque handle to the global MAC context
+  * @bssid: pointer to bssid
+  * @vdev_id: sme session id
++ * @op_mode: operating mode
+  *
+  * Return: QDF_STATUS_SUCCESS on success, non-zero error code on failure.
+  */
+-QDF_STATUS sme_create_mon_session(mac_handle_t mac_handle, uint8_t *bss_id,
+-				  uint8_t vdev_id)
++QDF_STATUS sme_create_pe_session(mac_handle_t mac_handle, uint8_t *bss_id,
++				 uint8_t vdev_id, enum QDF_OPMODE op_mode)
+ {
+ 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+ 	struct sir_create_session *msg;
+ 
+ 	msg = qdf_mem_malloc(sizeof(*msg));
+ 	if (msg) {
+-		msg->type = eWNI_SME_MON_INIT_SESSION;
++		if (op_mode == QDF_MONITOR_MODE) {
++			msg->type = eWNI_SME_MON_INIT_SESSION;
++		} else if (op_mode == QDF_PASSTHRU_MODE) {
++			msg->type = eWNI_SME_PASSTHRU_INIT_SESSION;
++		} else {
++			sme_err("op_mode:%d not supported", op_mode);
++			qdf_mem_free(msg);
++			return status;
++		}
++
+ 		msg->vdev_id = vdev_id;
+ 		msg->msg_len = sizeof(*msg);
+ 		qdf_mem_copy(msg->bss_id.bytes, bss_id, QDF_MAC_ADDR_SIZE);
+@@ -12966,14 +12975,24 @@
+ 	return status;
+ }
+ 
+-QDF_STATUS sme_delete_mon_session(mac_handle_t mac_handle, uint8_t vdev_id)
++QDF_STATUS sme_delete_pe_session(mac_handle_t mac_handle, uint8_t vdev_id,
++				 enum QDF_OPMODE op_mode)
+ {
+ 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+ 	struct sir_delete_session *msg;
+ 
+ 	msg = qdf_mem_malloc(sizeof(*msg));
+ 	if (msg) {
+-		msg->type = eWNI_SME_MON_DEINIT_SESSION;
++		if (op_mode == QDF_MONITOR_MODE) {
++			msg->type = eWNI_SME_MON_DEINIT_SESSION;
++		} else if (op_mode == QDF_PASSTHRU_MODE) {
++			msg->type = eWNI_SME_PASSTHRU_DEINIT_SESSION;
++		} else {
++			sme_err("op_mode:%d not supported", op_mode);
++			qdf_mem_free(msg);
++			return status;
++		}
++
+ 		msg->vdev_id = vdev_id;
+ 		msg->msg_len = sizeof(*msg);
+ 		status = umac_send_mb_message_to_mac(msg);
+@@ -16935,10 +16954,74 @@
+ #endif /* FEATURE_ANI_LEVEL_REQUEST */
+ 
+ #ifdef FEATURE_MONITOR_MODE_SUPPORT
+-
+-QDF_STATUS sme_set_monitor_mode_cb(mac_handle_t mac_handle,
+-				   void (*monitor_mode_cb)(uint8_t vdev_id,
+-							   bool is_up))
++static inline
++void sme_set_monitor_mode_cb(struct mac_context *mac,
++			     void (*monitor_mode_cb)(uint8_t vdev_id,
++						     bool is_up))
++{
++	mac->sme.monitor_mode_cb = monitor_mode_cb;
++}
++
++static inline
++void sme_invoke_monitor_mode_cb(struct mac_context *mac, uint8_t vdev_id,
++				bool is_up)
++{
++	if (mac->sme.monitor_mode_cb)
++		mac->sme.monitor_mode_cb(vdev_id, is_up);
++}
++
++#else
++static inline
++void sme_set_monitor_mode_cb(struct mac_context *mac,
++			     void (*monitor_mode_cb)(uint8_t vdev_id,
++						     bool is_up))
++{
++}
++
++static inline
++void sme_invoke_monitor_mode_cb(struct mac_context *mac, uint8_t vdev_id,
++				bool is_up)
++{
++}
++#endif
++
++#ifdef DRIVER_PASSTHRU_MODE
++static inline
++void sme_set_passthrough_mode_cb(struct mac_context *mac,
++				 void (*passthrough_mode_cb)(uint8_t vdev_id,
++							     bool is_up))
++{
++	mac->sme.passthrough_mode_cb = passthrough_mode_cb;
++}
++
++static inline
++void sme_invoke_passthrough_mode_cb(struct mac_context *mac, uint8_t vdev_id,
++				    bool is_up)
++{
++	if (mac->sme.passthrough_mode_cb)
++		mac->sme.passthrough_mode_cb(vdev_id, is_up);
++}
++#else
++static inline
++void sme_set_passthrough_mode_cb(struct mac_context *mac,
++				 void (*passthrough_mode_cb)(uint8_t vdev_id,
++							     bool is_up))
++{
++}
++
++static inline
++void sme_invoke_passthrough_mode_cb(struct mac_context *mac, uint8_t vdev_id,
++				    bool is_up)
++{
++}
++#endif
++
++#if defined(FEATURE_MONITOR_MODE_SUPPORT) || defined(DRIVER_PASSTHRU_MODE)
++QDF_STATUS sme_set_op_mode_cb(mac_handle_t mac_handle,
++			      void (*monitor_mode_cb)(uint8_t vdev_id,
++						      bool is_up),
++			      void (*passthrough_mode_cb)(uint8_t vdev_id,
++							  bool is_up))
+ {
+ 	QDF_STATUS qdf_status;
+ 	struct mac_context *mac = MAC_CONTEXT(mac_handle);
+@@ -16948,7 +17031,9 @@
+ 		sme_err("Failed to acquire sme lock; status: %d", qdf_status);
+ 		return qdf_status;
+ 	}
+-	mac->sme.monitor_mode_cb = monitor_mode_cb;
++
++	sme_set_monitor_mode_cb(mac, monitor_mode_cb);
++	sme_set_passthrough_mode_cb(mac, passthrough_mode_cb);
+ 	sme_release_global_lock(&mac->sme);
+ 
+ 	return qdf_status;
+@@ -16958,17 +17043,22 @@
+ {
+ 	mac_handle_t mac_handle;
+ 	struct mac_context *mac;
++	enum QDF_OPMODE op_mode;
+ 
+ 	mac_handle = cds_get_context(QDF_MODULE_ID_SME);
+ 	if (!mac_handle)
+ 		return QDF_STATUS_E_INVAL;
+ 
+ 	mac = MAC_CONTEXT(mac_handle);
+-
+-	if (mac->sme.monitor_mode_cb)
+-		mac->sme.monitor_mode_cb(vdev_id, is_up);
+-	else {
+-		sme_warn_rl("monitor_mode_cb is not registered");
++	op_mode = wlan_get_opmode_from_vdev_id(mac->pdev, vdev_id);
++
++	if (op_mode == QDF_MONITOR_MODE) {
++		sme_invoke_monitor_mode_cb(mac, vdev_id, is_up);
++	} else if (op_mode == QDF_PASSTHRU_MODE) {
++		sme_invoke_passthrough_mode_cb(mac, vdev_id, is_up);
++	} else {
++		sme_warn_rl("no callback registered for mode:%d",
++			    op_mode);
+ 		return QDF_STATUS_E_FAILURE;
+ 	}
+ 
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/csr/csr_api_roam.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/sme/src/csr/csr_api_roam.c
+@@ -6356,6 +6356,7 @@
+ 
+ 	switch (dev_mode) {
+ 	case QDF_STA_MODE:
++	case QDF_PASSTHRU_MODE:
+ 		*nss_2g = mac_ctx->vdev_type_nss_2g.sta;
+ 		*nss_5g = mac_ctx->vdev_type_nss_5g.sta;
+ 		break;
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_dev_if.c
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/core/wma/src/wma_dev_if.c
+@@ -1128,10 +1128,10 @@
+ 	iface = &wma->interfaces[rsp->vdev_id];
+ 	wma_debug("Send channel switch resp vdev %d status %d",
+ 		 rsp->vdev_id, rsp->status);
+-
+ 	/* Indicate channel switch failure to LIM */
+ 	if (QDF_IS_STATUS_ERROR(rsp->status) &&
+ 	    (iface->type == WMI_VDEV_TYPE_MONITOR ||
++	     iface->type == WMI_VDEV_TYPE_WIFI_PASSTHRU ||
+ 	     wma_is_vdev_in_ap_mode(wma, rsp->vdev_id) ||
+ 	     mlme_is_chan_switch_in_progress(iface->vdev))) {
+ 		mlme_set_chan_switch_in_progress(iface->vdev, false);
+@@ -1441,6 +1441,7 @@
+ 
+ 	if (mlme_is_chan_switch_in_progress(iface->vdev) ||
+ 	    iface->type == WMI_VDEV_TYPE_MONITOR ||
++	    iface->type == WMI_VDEV_TYPE_WIFI_PASSTHRU ||
+ 	    (iface->type == WMI_VDEV_TYPE_STA &&
+ 	     (assoc_type == VDEV_ASSOC || assoc_type == VDEV_REASSOC))) {
+ 		status = wma_handle_channel_switch_resp(wma,
+@@ -3329,6 +3330,7 @@
+ 	case WMI_VDEV_TYPE_NAN:
+ 	case WMI_VDEV_TYPE_OCB:
+ 	case WMI_VDEV_TYPE_MONITOR:
++	case WMI_VDEV_TYPE_WIFI_PASSTHRU:
+ 		status = ucfg_get_enable_sifs_burst(wma_handle->psoc,
+ 						    &enable_sifs_burst);
+ 		if (QDF_IS_STATUS_ERROR(status))

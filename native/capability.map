@@ -1,0 +1,4 @@
+{
+    global: AIBinder_Class_define;
+    local: *;
+};

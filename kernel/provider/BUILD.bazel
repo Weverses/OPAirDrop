@@ -1,0 +1,20 @@
+load("//build/kernel/kleaf:kernel.bzl", "ddk_module")
+
+ddk_module(
+    name = "opairshare_wonder_provider",
+    srcs = ["provider.c", "wondertap.h"],
+    out = "opairshare_wonder_provider.ko",
+    kernel_build = "//msm-kernel:sun_perf",
+    deps = ["//msm-kernel:all_headers"],
+)
+
+ddk_module(
+    name = "opairshare_route_b_probe",
+    srcs = ["probe.c", "wondertap.h"],
+    out = "opairshare_route_b_probe.ko",
+    kernel_build = "//msm-kernel:sun_perf",
+    deps = [
+        "//msm-kernel:all_headers",
+        ":opairshare_wonder_provider",
+    ],
+)

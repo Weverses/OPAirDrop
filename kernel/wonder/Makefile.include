@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# This file should be included by external modules that need to link to this
+# project.
+
+KCFLAGS += -I$(ROOT_DIR)/vendor/oplus/kernel/wifi/wonder/include
+
+
+KBUILD_EXTRA_SYMBOLS += $(COMMON_OUT_DIR)/target/product/canoe/dlkm/lib/modules/Module.symvers

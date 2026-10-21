@@ -1,0 +1,42 @@
+mac80211 rate control for the wonder driver.
+
+vendor/sun_perf.config ships mac80211 with no rate control algorithm at all
+(CONFIG_MAC80211_RC_MINSTREL not set, RC_DEFAULT empty). Nothing on this product
+used mac80211 before, so it did not matter. wonder.ko is a mac80211 driver and
+ieee80211_register_hw() refuses to register without at least one algorithm, so it
+could never come up: observed on hardware as
+
+    ieee80211 wonder: Failed to select rate control algorithm
+    [wonder][mac80211] Failed to register mac80211 hardware. Ret: -2
+
+Fix: select minstrel_ht (CONFIG_MAC80211_RC_DEFAULT="minstrel_ht" is the name the
+algorithm registers under).
+
+Verified after rebuild:
+  - regenerated .config has CONFIG_MAC80211_RC_MINSTREL=y, RC_DEFAULT="minstrel_ht"
+  - mac80211.ko now contains 141 minstrel strings (was 0)
+  - exports unchanged: 136/136 symbols, every CRC identical to the stock module
+  - imports +2 (kmalloc_large, param_ops_bool), both inside the KMI whitelist
+  - vermagic unchanged
+
+Apply from kernel_platform/msm-kernel (its own git repository):
+    git apply .../0004-mac80211-rate-control-for-wonder.patch
+
+diff --git a/arch/arm64/configs/vendor/sun_perf.config b/arch/arm64/configs/vendor/sun_perf.config
+index 61288b2fd..97f6487cc 100644
+--- a/arch/arm64/configs/vendor/sun_perf.config
++++ b/arch/arm64/configs/vendor/sun_perf.config
+@@ -101,8 +101,11 @@ CONFIG_MAC80211=m
+ # CONFIG_MAC80211_LEDS is not set
+ # CONFIG_MAC80211_MESH is not set
+ # CONFIG_MAC80211_MESSAGE_TRACING is not set
+-CONFIG_MAC80211_RC_DEFAULT=""
+-# CONFIG_MAC80211_RC_MINSTREL is not set
++# Enabled for the wonder mac80211 driver: it cannot register without a
++# rate control algorithm. Empty by default on this product.
++CONFIG_MAC80211_RC_DEFAULT="minstrel_ht"
++CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y
++CONFIG_MAC80211_RC_MINSTREL=y
+ CONFIG_MAX31760_FAN_CONTROLLER=m
+ CONFIG_MEM_SHARE_QMI_SERVICE=m
+ CONFIG_MFD_I2C_PMIC=m

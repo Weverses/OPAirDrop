@@ -1,0 +1,8 @@
+{
+  "url": "https://github.com/luyanci/hybrid-miuix-webui",
+  "commit": "cfc4218dc24e7879d873d7e8f3089240bad9254d",
+  "miuix-vue": "0.1.1",
+  "vue": "3.5.38",
+  "modified": true,
+  "adaptation": "Vue component layout and separate backend API adapter for OPAIRSHARE; no Hybrid Mount runtime operations"
+}

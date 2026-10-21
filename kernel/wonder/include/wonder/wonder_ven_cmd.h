@@ -1,0 +1,179 @@
+#ifndef WONDER_VEN_CMD_H
+#define WONDER_VEN_CMD_H
+
+#include <linux/types.h>
+
+/* ============================================================================
+ * Base Type Sizes (in bytes)
+ * ==========================================================================*/
+#define WONDER_ATTR_SIZE_U8             1
+#define WONDER_ATTR_SIZE_U16            2
+#define WONDER_ATTR_SIZE_U32            4
+#define WONDER_ATTR_SIZE_U64            8
+#define WONDER_ADDR_LEN                 6
+#define WONDER_COUNTRY_CODE_LEN         2 /* ISO 3166-1 alpha-2 */
+
+/* ============================================================================
+ * Vendor Subcommands
+ * ==========================================================================*/
+enum wonder_vendor_subcmd {
+    WONDER_VEN_SUBCMD_UNSPEC = 0x0,
+    WONDER_VEN_SUBCMD_SET_FREQUENCY = 0x1,
+    WONDER_VEN_SUBCMD_SET_FILTER = 0x2,
+    WONDER_VEN_SUBCMD_SET_FIXED_TX_RATE = 0x3,
+    WONDER_VEN_SUBCMD_SET_REGULATORY = 0x4,
+    WONDER_VEN_SUBCMD_GET_IF_MAC_ADDR = 0x5,
+    WONDER_VEN_SUBCMD_SET_TX_RATE_TEST = 0xF,
+    __WONDER_VEN_SUBCMD_AFTER_LAST,
+    WONDER_VEN_SUBCMD_MAX = __WONDER_VEN_SUBCMD_AFTER_LAST - 1,
+};
+
+/* ============================================================================
+ * Attribute Definitions
+ * ==========================================================================*/
+
+/* --- SET_FREQUENCY Attributes --- */
+#define WONDER_VEN_ATTR_CHANNEL_FREQ_SIZE       WONDER_ATTR_SIZE_U32
+#define WONDER_VEN_ATTR_CHANNEL_BANDWIDTH_SIZE  WONDER_ATTR_SIZE_U16
+
+enum wonder_vendor_channel_attr {
+    WONDER_VEN_ATTR_CHANNEL_UNSPEC = 0,
+    WONDER_VEN_ATTR_CHANNEL_FREQ,      /* MHz */
+    WONDER_VEN_ATTR_CHANNEL_BANDWIDTH, /* MHz */
+    __WONDER_VEN_ATTR_CHANNEL_AFTER_LAST,
+    WONDER_VEN_ATTR_CHANNEL_ATTR_MAX = __WONDER_VEN_ATTR_CHANNEL_AFTER_LAST - 1
+};
+
+enum wonder_vendor_channel_bw {
+    WONDER_VEN_ATTR_CHANNEL_BW_20  = 0,
+    WONDER_VEN_ATTR_CHANNEL_BW_40  = 1,
+    WONDER_VEN_ATTR_CHANNEL_BW_80  = 2,
+    WONDER_VEN_ATTR_CHANNEL_BW_160 = 3,
+    WONDER_VEN_ATTR_CHANNEL_BW_320 = 4,
+};
+
+/* --- SET_FILTER Top-Level Attributes --- */
+#define WONDER_VEN_ATTR_TOP_FILTER_TYPE_SIZE    WONDER_ATTR_SIZE_U32
+/* Note: PARAMS_SIZE is variable because it is a nested attribute */
+
+enum wonder_vendor_filter_top_attr {
+    WONDER_VEN_ATTR_TOP_FILTER_PARAM_UNSPEC = 0,
+    WONDER_VEN_ATTR_TOP_FILTER_TYPE,
+    WONDER_VEN_ATTR_TOP_FILTER_PARAMS, /* NLA_NESTED */
+    __WONDER_VEN_ATTR_TOP_FILTER_AFTER_LAST,
+    WONDER_VEN_ATTR_TOP_FILTER_MAX = __WONDER_VEN_ATTR_TOP_FILTER_AFTER_LAST - 1
+};
+
+enum wonder_vendor_filter_type {
+	/**
+	 * @brief Configures the BSSID-based MAC address filter.
+	 * When enabled, the hardware will only accept data frames matching the
+	 * specified BSSID.
+	 */
+	WONDER_VEN_ATTR_FILTER_TYPE_BSSID,
+
+	/**
+	 * @brief Configures a filter based on the 802.11 frame's type and subtype.
+	 */
+	WONDER_VEN_ATTR_FILTER_TYPE_FRAME,
+};
+
+/* --- SET_FILTER Nested Attributes --- */
+#define WONDER_VEN_ATTR_FILTER_BSSID_ENABLED_SIZE WONDER_ATTR_SIZE_U8
+#define WONDER_VEN_ATTR_FILTER_BSSID_ADDR_SIZE    WONDER_ADDR_LEN
+#define WONDER_VEN_ATTR_FILTER_FRAME_ENABLED_SIZE WONDER_ATTR_SIZE_U8
+#define WONDER_VEN_ATTR_FILTER_FRAME_TYPE_SIZE    WONDER_ATTR_SIZE_U16
+#define WONDER_VEN_ATTR_FILTER_FRAME_SUBTYPE_SIZE WONDER_ATTR_SIZE_U16
+
+enum wonder_vendor_filter_attr {
+    WONDER_VEN_ATTR_FILTER_PARAM_UNSPEC = 0,
+    /* BSSID filter */
+    WONDER_VEN_ATTR_FILTER_BSSID_ENABLED,
+    WONDER_VEN_ATTR_FILTER_BSSID_ADDR,
+    /* Frame filter */
+    WONDER_VEN_ATTR_FILTER_FRAME_ENABLED,
+    WONDER_VEN_ATTR_FILTER_FRAME_TYPE,
+    WONDER_VEN_ATTR_FILTER_FRAME_SUBTYPE,
+    __WONDER_VEN_ATTR_FILTER_PARAM_AFTER_LAST,
+    WONDER_VEN_ATTR_FILTER_PARAM_MAX = __WONDER_VEN_ATTR_FILTER_PARAM_AFTER_LAST - 1
+};
+
+/* --- SET_FIXED_TX_RATE Attributes --- */
+#define WONDER_VEN_ATTR_FIXED_TX_RATE_PREAMBLE_SIZE WONDER_ATTR_SIZE_U32
+#define WONDER_VEN_ATTR_FIXED_TX_RATE_BW_SIZE       WONDER_ATTR_SIZE_U16
+#define WONDER_VEN_ATTR_FIXED_TX_RATE_GI_SIZE       WONDER_ATTR_SIZE_U32
+#define WONDER_VEN_ATTR_FIXED_TX_RATE_NSS_SIZE      WONDER_ATTR_SIZE_U8
+#define WONDER_VEN_ATTR_FIXED_TX_RATE_MCS_SIZE      WONDER_ATTR_SIZE_U8
+
+enum wonder_vendor_fixed_tx_rate_attr {
+    WONDER_VEN_ATTR_FIXED_TX_RATE_UNSPEC,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_PREAMBLE,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_BW,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_GI,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_NSS,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_MCS,
+    __WONDER_VEN_ATTR_FIXED_TX_RATE_AFTER_LAST,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_MAX = __WONDER_VEN_ATTR_FIXED_TX_RATE_AFTER_LAST - 1
+};
+
+/* --- SET_TX_RATE Attributes --- */
+#define WONDER_VEN_ATTR_TX_RATE_TEST_PREAMBLE_SIZE WONDER_ATTR_SIZE_U32
+#define WONDER_VEN_ATTR_TX_RATE_TEST_BW_SIZE       WONDER_ATTR_SIZE_U16
+#define WONDER_VEN_ATTR_TX_RATE_TEST_NSS_SIZE      WONDER_ATTR_SIZE_U8
+#define WONDER_VEN_ATTR_TX_RATE_TEST_MCS_SIZE      WONDER_ATTR_SIZE_U8
+
+enum wonder_vendor_tx_rate_test_attr {
+    WONDER_VEN_ATTR_TX_RATE_TEST_UNSPEC,
+    WONDER_VEN_ATTR_TX_RATE_TEST_PREAMBLE,
+    WONDER_VEN_ATTR_TX_RATE_TEST_BW,
+    WONDER_VEN_ATTR_TX_RATE_TEST_NSS,
+    WONDER_VEN_ATTR_TX_RATE_TEST_MCS,
+    __WONDER_VEN_ATTR_TX_RATE_TEST_AFTER_LAST,
+    WONDER_VEN_ATTR_TX_RATE_TEST_MAX = __WONDER_VEN_ATTR_TX_RATE_TEST_AFTER_LAST - 1
+};
+
+enum wonder_vendor_fixed_tx_rate_preamble {
+    WONDER_VEN_ATTR_FIXED_TX_RATE_PREAMBLE_LEGACY = 0, /* 802.11a/g (non-HT) */
+    WONDER_VEN_ATTR_FIXED_TX_RATE_PREAMBLE_HT     = 1, /* 802.11n (High Throughput) */
+    WONDER_VEN_ATTR_FIXED_TX_RATE_PREAMBLE_VHT    = 2, /* 802.11ac (Very High Throughput) */
+    WONDER_VEN_ATTR_FIXED_TX_RATE_PREAMBLE_HE     = 3, /* 802.11ax (High Efficiency) */
+    WONDER_VEN_ATTR_FIXED_TX_RATE_PREAMBLE_EHT    = 4, /* 802.11be (Extremely High Throughput) */
+};
+
+enum wonder_vendor_fixed_tx_rate_bw {
+    WONDER_VEN_ATTR_FIXED_TX_RATE_BW_20  = WONDER_VEN_ATTR_CHANNEL_BW_20,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_BW_40  = WONDER_VEN_ATTR_CHANNEL_BW_40,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_BW_80  = WONDER_VEN_ATTR_CHANNEL_BW_80,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_BW_160 = WONDER_VEN_ATTR_CHANNEL_BW_160,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_BW_320 = WONDER_VEN_ATTR_CHANNEL_BW_320,
+};
+
+enum wonder_vendor_fixed_tx_rate_gi {
+    WONDER_VEN_ATTR_FIXED_TX_RATE_GI_UNSPEC  = 0,
+    WONDER_VEN_ATTR_FIXED_TX_RATE_GI_0_4_US  = 1, /* Short GI 0.4us */
+    WONDER_VEN_ATTR_FIXED_TX_RATE_GI_0_8_US  = 2, /* Long GI 0.8us */
+    WONDER_VEN_ATTR_FIXED_TX_RATE_GI_1_6_US  = 3, /* 1.6us (HE/EHT) */
+    WONDER_VEN_ATTR_FIXED_TX_RATE_GI_3_2_US  = 4, /* 3.2us (HE/EHT) */
+};
+
+/* --- SET_REGULATORY Attributes --- */
+#define WONDER_VEN_ATTR_REG_COUNTRY_CODE_SIZE   WONDER_COUNTRY_CODE_LEN
+
+enum wonder_vendor_reg_attr {
+    WONDER_VEN_ATTR_REG_UNSPEC,
+    WONDER_VEN_ATTR_REG_COUNTRY_CODE,
+    __WONDER_VEN_ATTR_REG_AFTER_LAST,
+    WONDER_VEN_ATTR_REG_MAX = __WONDER_VEN_ATTR_REG_AFTER_LAST - 1
+};
+
+/* --- GET_IF_MAC_ADDR Attributes --- */
+#define WONDER_VEN_ATTR_IF_ADDR_MAC_ADDR_SIZE   WONDER_ADDR_LEN
+
+enum wonder_vendor_if_addr_attr {
+    WONDER_VEN_ATTR_IF_ADDR_UNSPEC,
+    WONDER_VEN_ATTR_IF_ADDR_MAC_ADDR,
+    __WONDER_VEN_ATTR_IF_ADDR_AFTER_LAST,
+    WONDER_VEN_ATTR_IF_ADDR_MAX = __WONDER_VEN_ATTR_IF_ADDR_AFTER_LAST - 1
+};
+
+#endif /* WONDER_VEN_CMD_H */

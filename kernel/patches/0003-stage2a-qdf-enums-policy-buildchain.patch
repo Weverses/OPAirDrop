@@ -1,0 +1,191 @@
+Stage 2a -- wondertap plumbing that is safe with the feature switched OFF.
+
+Adds only: the 3 QDF wondertap headers (new files, see the 3 untracked paths in
+the tree), QDF_PASSTHRU_MODE, wlan_op_mode_passthru, WMI_VDEV_TYPE_WIFI_PASSTHRU,
+the PM_PASSTHRU_* enum values, and the Kconfig/Kbuild/config_to_feature switch.
+
+The policy table rows (1081 lines across 6 files) are NOT in this patch -- they
+are produced by opairshare/insert_passthru_tables.py, which is validated against
+the reference tree and refuses to run twice.
+
+Apply from the tree root (/mnt/opairshare-build/opairshare) with:
+    git apply opairshare/patches/0003-stage2a-qdf-enums-policy-buildchain.patch
+
+Verified: with the feature OFF, the rebuilt qca_cld3_peach_v2.ko has an identical
+ABI (587 imports / 588 versions / 0 exports, all CRCs equal) to the pre-change build.
+
+diff --git a/vendor/oplus/kernel/wifi/oplus_local_modules.bzl b/vendor/oplus/kernel/wifi/oplus_local_modules.bzl
+index b0dff872..b86411e9 100755
+--- a/vendor/oplus/kernel/wifi/oplus_local_modules.bzl
++++ b/vendor/oplus/kernel/wifi/oplus_local_modules.bzl
+@@ -116,7 +116,13 @@ def define_oplus_local_modules():
+                     "//soc-repo:{}/net/wireless/cfg80211".format(_KERNEL_BUILD_VARIANT),
+                     "//soc-repo:{}/net/mac80211/mac80211".format(_KERNEL_BUILD_VARIANT),
+                 ]
++            else:
++                # Only canoe pulls cfg80211/mac80211 from //soc-repo. Every other
++                # target (including sun) gets them from kernel_build, matching the
++                # convention used by the other oplus module definitions.
++                wonder_ko_deps = []
+ 
++            if target in ["canoe", "sun"]:
+                 define_oplus_ddk_module(
+                     name = "wonder",
+                     srcs = native.glob([
+diff --git a/vendor/qcom/opensource/wlan/fw-api/fw/wmi_unified.h b/vendor/qcom/opensource/wlan/fw-api/fw/wmi_unified.h
+index 70eaf182..d2e8795a 100644
+--- a/vendor/qcom/opensource/wlan/fw-api/fw/wmi_unified.h
++++ b/vendor/qcom/opensource/wlan/fw-api/fw/wmi_unified.h
+@@ -17203,6 +17203,8 @@ typedef enum {
+ 
+ #define WMI_VDEV_TYPE_MESH_POINT 0x8
+ 
++#define WMI_VDEV_TYPE_WIFI_PASSTHRU 0x9
++
+ /*
+  * Param values to be sent for WMI_VDEV_PARAM_SGI command
+  * which are used in 11ax, 11be systems
+diff --git a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/inc/cdp_txrx_cmn_struct.h b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/inc/cdp_txrx_cmn_struct.h
+index 69df1557..52a05a53 100644
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/inc/cdp_txrx_cmn_struct.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/dp/inc/cdp_txrx_cmn_struct.h
+@@ -770,6 +770,7 @@ struct cdp_tx_exception_metadata {
+  * @wlan_op_mode_monitor: Monitor mode
+  * @wlan_op_mode_ocb: OCB mode
+  * @wlan_op_mode_ndi: NDI mode
++ * @wlan_op_mode_passthru: Passthrough mode
+  */
+ enum wlan_op_mode {
+ 	wlan_op_mode_unknown,
+@@ -779,6 +780,7 @@ enum wlan_op_mode {
+ 	wlan_op_mode_monitor,
+ 	wlan_op_mode_ocb,
+ 	wlan_op_mode_ndi,
++	wlan_op_mode_passthru,
+ };
+ 
+ /**
+diff --git a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/inc/qdf_types.h b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/inc/qdf_types.h
+index 902f1eb6..57be1fd6 100644
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/inc/qdf_types.h
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/inc/qdf_types.h
+@@ -754,6 +754,7 @@ typedef enum {
+  * @QDF_AHDEMO_MODE: AHDEMO mode
+  * @QDF_TDLS_MODE: TDLS device mode
+  * @QDF_NAN_DISC_MODE: NAN Discovery device mode
++ * @QDF_PASSTHRU_MODE: Passthrough mode
+  * @QDF_MAX_NO_OF_MODE: Max place holder
+  *
+  * These are generic IDs that identify the various roles
+@@ -777,6 +778,7 @@ enum QDF_OPMODE {
+ 	QDF_AHDEMO_MODE,
+ 	QDF_TDLS_MODE,
+ 	QDF_NAN_DISC_MODE,
++	QDF_PASSTHRU_MODE,
+ 
+ 	/* Add new OP Modes to qdf_opmode_str as well */
+ 
+diff --git a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/src/qdf_types.c b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/src/qdf_types.c
+index c961bf9a..27a03346 100644
+--- a/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/src/qdf_types.c
++++ b/vendor/qcom/opensource/wlan/qca-wifi-host-cmn/qdf/src/qdf_types.c
+@@ -61,6 +61,8 @@ const char *qdf_opmode_str(const enum QDF_OPMODE opmode)
+ 		return "TDLS";
+ 	case QDF_NAN_DISC_MODE:
+ 		return "NAN";
++	case QDF_PASSTHRU_MODE:
++		return "PASSTHRU";
+ 	default:
+ 		return "Invalid operating mode";
+ 	}
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild b/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild
+index 05eb992b..4aff4eb0 100755
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/Kbuild
+@@ -583,6 +583,12 @@ HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_wifi_pos_pasn.o
+ endif
+ endif
+ 
++ifeq ($(CONFIG_DRIVER_PASSTHRU_MODE), y)
++ifeq ($(CONFIG_WONDER_SUPPORT), y)
++HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_wondertap.o
++endif
++endif
++
+ $(call add-wlan-objs,hdd,$(HDD_OBJS))
+ 
+ ###### OSIF_SYNC ########
+@@ -3663,6 +3669,8 @@ ccflags-$(CONFIG_WLAN_RESIDENT_DRIVER) += -DFEATURE_WLAN_RESIDENT_DRIVER
+ ccflags-$(CONFIG_FEATURE_GPIO_CFG) += -DWLAN_FEATURE_GPIO_CFG
+ ccflags-$(CONFIG_FEATURE_BUS_BANDWIDTH_MGR) += -DFEATURE_BUS_BANDWIDTH_MGR
+ ccflags-$(CONFIG_DP_BE_WAR) += -DDP_BE_WAR
++ccflags-$(CONFIG_WONDER_SUPPORT) += -DCONFIG_WONDER_SUPPORT
++ccflags-$(CONFIG_DRIVER_PASSTHRU_MODE) += -DDRIVER_PASSTHRU_MODE
+ 
+ ifeq ($(CONFIG_IPCIE_FW_SIM), y)
+ ccflags-y += -DCONFIG_PLD_IPCIE_FW_SIM
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/Kconfig b/vendor/qcom/opensource/wlan/qcacld-3.0/Kconfig
+index 48af093a..14609c97 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/Kconfig
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/Kconfig
+@@ -2422,4 +2422,15 @@ config CHIP_VERSION
+         int "Enable CHIP_VERSION"
+         default 1
+ endif
++config DRIVER_PASSTHRU_MODE
++	bool "Enable Driver Passthrough mode"
++	default n
++
++config WONDER_SUPPORT
++	bool "Enable Wonder support"
++	depends on DRIVER_PASSTHRU_MODE
++	# Backward compatibility: passthru mode historically built wondertap pieces.
++	# Products can override to 'n' explicitly when passthru is enabled.
++	default y
++
+ endif # QCA_CLD_WLAN
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_public_struct.h b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_public_struct.h
+index 81e0a179..8c8e69f5 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_public_struct.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/components/cmn_services/policy_mgr/inc/wlan_policy_mgr_public_struct.h
+@@ -426,6 +426,7 @@ enum policy_mgr_con_mode {
+ 	PM_NDI_MODE,
+ 	PM_NAN_DISC_MODE,
+ 	PM_LL_LT_SAP_MODE,
++	PM_PASSTHRU_MODE,
+ 	PM_MAX_NUM_OF_MODE
+ };
+ 
+@@ -606,6 +607,10 @@ enum policy_mgr_pcl_type {
+  * @PM_NDI_5_2x2:  NAN Datapath using 2x2@5 Ghz
+  * @PM_LL_LT_SAP_5_1x1: Low latency low throughput SAP using 1x1@5 Ghz
+  * @PM_LL_LT_SAP_5_2x2: Low latency low throughput SAP using 2x2@5 Ghz
++ * @PM_PASSTHRU_24_1x1_2x2: Passthrough mode connection on 2.4 GHz band
++ *   supporting both 1x1 and 2x2 spatial streams
++ * @PM_PASSTHRU_5_1x1_2x2: Passthrough mode connection on 5 GHz band
++ *   supporting both 1x1 and 2x2 spatial streams
+  * @PM_MAX_ONE_CONNECTION_MODE: Max place holder
+  *
+  * These are generic IDs that identify the various roles
+@@ -636,6 +641,8 @@ enum policy_mgr_one_connection_mode {
+ 	PM_NDI_5_2x2,
+ 	PM_LL_LT_SAP_5_1x1,
+ 	PM_LL_LT_SAP_5_2x2 = PM_LL_LT_SAP_5_1x1,
++	PM_PASSTHRU_24_1x1_2x2,
++	PM_PASSTHRU_5_1x1_2x2,
+ 
+ 	PM_MAX_ONE_CONNECTION_MODE
+ };
+diff --git a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/config_to_feature.h b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/config_to_feature.h
+index 0473c4fa..144cf3d4 100644
+--- a/vendor/qcom/opensource/wlan/qcacld-3.0/configs/config_to_feature.h
++++ b/vendor/qcom/opensource/wlan/qcacld-3.0/configs/config_to_feature.h
+@@ -3151,4 +3151,8 @@
+ #define WLAN_BOOST_CPU_FREQ_IN_ROAM (1)
+ #endif
+ 
++#if IS_ENABLED(CONFIG_WONDER_SUPPORT) && defined(CONFIG_DRIVER_PASSTHRU_MODE)
++#define DRIVER_PASSTHRU_MODE (1)
++#endif
++
+ #endif /* CONFIG_TO_FEATURE_H */
