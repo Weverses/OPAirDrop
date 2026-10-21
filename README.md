@@ -100,6 +100,6 @@ sh oshare/tests/run.sh
 
 ## 来源与许可
 
-项目许可证见 [LICENSE](LICENSE)，组件内的 SPDX 标识与版权声明随源码保留。WebUI 的参考来源与版本记录在 [reference-info.json](webui/reference-info.json)，参考项目许可证位于 [LICENSE-REFERENCE](webui/LICENSE-REFERENCE)。
+项目默认采用 **GPLv3**，完整条款见 [LICENSE](LICENSE)。内核适配、原生助手和引用代码的协议范围见 [开源许可说明](LICENSING.md)，来源与版本见 [第三方声明](THIRD_PARTY_NOTICES.md)。各组件的原 SPDX 标识与版权声明随源码保留。
 
 源码提取与迁移记录位于 `docs/migration.json`，本地构建和回归记录位于 `docs/verification.json`。
