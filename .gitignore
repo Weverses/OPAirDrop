@@ -8,6 +8,7 @@ local.properties
 /dist/
 /webui/dist/
 /oshare/app/build/
+/oshare/build/
 /local-inputs/
 /module/payload/
 /module/companion/

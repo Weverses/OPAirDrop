@@ -12,9 +12,11 @@ src="$root/app/src/main/java/com/tlsu/oshareairdrop"
 javac -cp "$sdk/platforms/android-37.0/android.jar" -d "$work/classes" \
     "$root"/tests/android/com/tlsu/oshareairdrop/*.java \
     "$src/ProviderApi.java" "$src/OutgoingTransfers.java" "$src/CallbackFactory.java" \
-    "$src/ProviderHolder.java" "$src/HostContext.java"
+    "$src/ProviderHolder.java" "$src/HostContext.java" "$src/IncomingTransfers.java" \
+    "$src/AirDropName.java" "$src/IncomingReceiver.java" "$src/ReceiveFiles.java" "$src/BridgeMessenger.java"
 jar cf "$work/classes.jar" -C "$work/classes" .
 "$sdk/build-tools/36.0.0/d8" --lib "$sdk/platforms/android-37.0/android.jar" \
     --output "$work/test.jar" "$work/classes.jar"
 adb push "$work/test.jar" "$remote_jar"
 adb shell "CLASSPATH=$remote_jar app_process /system/bin com.tlsu.oshareairdrop.TransferCallbackTest $remote_cache"
+adb shell "CLASSPATH=$remote_jar app_process /system/bin com.tlsu.oshareairdrop.BridgeAccessTest"

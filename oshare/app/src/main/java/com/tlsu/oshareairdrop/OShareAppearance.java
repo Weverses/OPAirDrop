@@ -18,7 +18,13 @@ public final class OShareAppearance {
     private static final ConcurrentHashMap<String, AirDropPresentation.Kind> KINDS = new ConcurrentHashMap<>();
     private OShareAppearance() {}
 
-    public static void apply(Context context, Object device, JSONObject target) throws Exception {
+    public interface DeviceAccess {
+        String key(Object device) throws Exception;
+        void setType(Object device, int value) throws Exception;
+        void setIcon(Object device, Bitmap bitmap) throws Exception;
+    }
+
+    public static void apply(Context context, Object device, JSONObject target, DeviceAccess access) throws Exception {
         String peer = "airdrop:" + target.getLong("id");
         AirDropPresentation.Kind candidate = AirDropPresentation.kind(target.optInt("type"),
                 target.optString("model"), target.optString("name"));
@@ -33,18 +39,17 @@ public final class OShareAppearance {
                 (key, previous) -> AirDropPresentation.preferKnown(previous == null ? remembered : previous, candidate));
         if (kind != AirDropPresentation.Kind.UNKNOWN && kind != saved)
             preferences.edit().putString(peer, kind.name()).apply();
-        applyKind(context, device, kind);
+        applyKind(context, device, kind, access);
     }
 
-    public static void restore(Context context, Object device) throws Exception {
-        String peer = String.valueOf(device.getClass().getMethod("a").invoke(device));
+    public static void restore(Context context, Object device, DeviceAccess access) throws Exception {
+        String peer = access.key(device);
         AirDropPresentation.Kind kind = KINDS.get(peer);
-        if (kind != null) applyKind(context, device, kind);
+        if (kind != null) applyKind(context, device, kind, access);
     }
 
-    private static void applyKind(Context context, Object device, AirDropPresentation.Kind kind) throws Exception {
-        Class<?> type = device.getClass();
-        type.getMethod("w0", int.class).invoke(device, kind.oshareType);
+    private static void applyKind(Context context, Object device, AirDropPresentation.Kind kind, DeviceAccess access) throws Exception {
+        access.setType(device, kind.oshareType);
         String key = kind.drawable + ":" + context.getResources().getConfiguration().hashCode();
         Bitmap bitmap = ICONS.get(key);
         if (bitmap == null || bitmap.isRecycled()) {
@@ -58,7 +63,7 @@ public final class OShareAppearance {
             drawable.draw(new Canvas(bitmap));
             ICONS.put(key, bitmap);
         }
-        type.getMethod("t0", Bitmap.class).invoke(device, bitmap);
+        access.setIcon(device, bitmap);
     }
 
     public static void renameSection(Activity activity) throws Exception {

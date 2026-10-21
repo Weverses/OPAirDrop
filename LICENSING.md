@@ -23,6 +23,8 @@ Qualcomm WLAN 文件中的 ISC 声明、Wonder 的 GPLv2 声明，以及 WebUI �
 
 协议全文和第三方许可文件位于 [LICENSES](LICENSES/README.md)。
 
+用户提供的 Unlock CN GMS v3.8 原始说明与安装脚本保存在 `third-party/unlock-cn-gms/`。输入包未提供许可证声明；这些第三方原始材料保留原作者信息，具体来源与集成修改见第三方声明。
+
 ## 分发时附带的文件
 
 发布源码时，附带根目录 `LICENSE`、本说明、第三方声明和各组件适用的许可证。发布模块时，随包保留所包含组件的许可文件，并提供对应版本的项目源码。

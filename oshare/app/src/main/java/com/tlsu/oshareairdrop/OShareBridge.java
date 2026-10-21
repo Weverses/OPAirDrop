@@ -18,12 +18,13 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
+import io.github.libxposed.api.XposedInterface.HookHandle;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Adapter for OShare 17.2.36's internal device manager and service implementation. */
+/** OShare adapter bound to semantic roles discovered by DexKit. */
 public final class OShareBridge {
     private static final String TAG = "OShareAirDrop";
     private static final String PREFIX = "airdrop:";
@@ -41,104 +42,105 @@ public final class OShareBridge {
     private static WeakReference<Activity> activity = new WeakReference<>(null);
     private static boolean connecting;
     private static long lastBoot;
-    private static Class<?> wrapper;
-    private static Class<?> extendedDevice;
-    private static Class<?> manager;
+    private static OShareSymbols symbols;
+    private static final ArrayList<HookHandle> HOOKS = new ArrayList<>();
 
     private OShareBridge() {}
 
-    public static void install(Entry module, ClassLoader cl) throws Exception {
+    public static void install(Entry module, Context context, ClassLoader cl) throws Exception {
+        OShareSymbols resolved = OShareResolver.resolve(module, context, cl);
         loader = cl;
-        Class<?> adapter = cl.loadClass("com.oplus.oshare.ui.DeviceAdapter");
-        for (java.lang.reflect.Constructor<?> ctor : adapter.getDeclaredConstructors()) {
-            module.hook(ctor).intercept(chain -> {
+        symbols = resolved;
+        Class<?> adapter = symbols.type("adapter");
+        try {
+            for (java.lang.reflect.Constructor<?> ctor : adapter.getDeclaredConstructors()) {
+                HOOKS.add(module.hook(ctor).intercept(chain -> {
+                    Object result = chain.proceed();
+                    ADAPTERS.put(chain.getThisObject(), true);
+                    return result;
+                }));
+            }
+            HOOKS.add(module.hook(symbols.method("adapter.bind")).intercept(chain -> {
+                Object device = chain.getArg(0);
+                String key = device == null ? "" : symbols.key(device);
+                if (key.startsWith(PREFIX)) {
+                    try {
+                        android.widget.ImageView avatar = (android.widget.ImageView) symbols.invoke("holder.image", chain.getArg(1));
+                        OShareAppearance.restore(avatar.getContext(), device, symbols);
+                    } catch (Throwable t) { module.log(Log.WARN, TAG, "device icon restore failed", t); }
+                }
                 Object result = chain.proceed();
-                ADAPTERS.put(chain.getThisObject(), true);
+                if (key.startsWith(PREFIX)) {
+                    android.widget.ImageView avatar = (android.widget.ImageView) symbols.invoke("holder.image", chain.getArg(1));
+                    android.graphics.Bitmap icon = (android.graphics.Bitmap) symbols.invoke("device.icon", device);
+                    if (icon != null && !icon.isRecycled()) avatar.setImageBitmap(icon);
+                }
                 return result;
-            });
-        }
-        wrapper = cl.loadClass("l9.b");
-        extendedDevice = cl.loadClass("v9.d");
-        manager = cl.loadClass("v9.a");
-        Class<?> holder = cl.loadClass("com.oplus.oshare.ui.DeviceAdapter$b");
-        module.hook(adapter.getDeclaredMethod("C", wrapper, holder, int.class)).intercept(chain -> {
-            Object device = chain.getArg(0);
-            String key = device == null ? "" : String.valueOf(call(device, "a"));
-            if (key.startsWith(PREFIX)) {
-                try {
-                    android.widget.ImageView avatar = (android.widget.ImageView) call(chain.getArg(1), "i");
-                    OShareAppearance.restore(avatar.getContext(), device);
-                } catch (Throwable t) { module.log(Log.WARN, TAG, "device icon restore failed", t); }
-            }
-            Object result = chain.proceed();
-            if (key.startsWith(PREFIX)) {
-                android.widget.ImageView avatar = (android.widget.ImageView) call(chain.getArg(1), "i");
-                android.graphics.Bitmap icon = (android.graphics.Bitmap) call(device, "W");
-                if (icon != null && !icon.isRecycled()) avatar.setImageBitmap(icon);
-            }
-            return result;
-        });
-        Class<?> stateClass = cl.loadClass("com.oplus.oshare.OplusOshareState");
-        module.hook(adapter.getDeclaredMethod("q", stateClass, wrapper)).intercept(chain -> {
-            Object device = chain.getArg(1);
-            String key = device == null ? "" : String.valueOf(call(device, "a"));
-            if (!key.startsWith(PREFIX)) return chain.proceed();
-            if ("IDLE".equals(String.valueOf(call(device, "n")))) return "AirDrop";
-            String phase = PHASES.get(key);
-            return phase != null ? phase : chain.proceed();
-        });
-        // The share panel reads n() again even when its callback receives a list.
-        module.hook(manager.getDeclaredMethod("n")).intercept(chain -> {
-            ArrayList<Object> result = new ArrayList<>((java.util.List<?>) chain.proceed());
-            result.addAll(DEVICES.values());
-            return result;
-        });
-        module.hook(manager.getDeclaredMethod("m", String.class)).intercept(chain -> {
-            Object device = DEVICES.get((String) chain.getArg(0));
-            return device != null ? device : chain.proceed();
-        });
-        Class<?> shareActivity = cl.loadClass("com.oplus.oshare.ui.ShareActivity");
-        module.hook(shareActivity.getDeclaredMethod("onResume")).intercept(chain -> {
-            Object result = chain.proceed();
-            Activity current = (Activity) chain.getThisObject();
-            activity = new WeakReference<>(current);
-            OShareAppearance.renameSection(current);
-            MAIN.postDelayed(() -> connect(current, 0), 1200);
-            return result;
-        });
-        for (String method : new String[]{"A1", "u1", "q1"}) {
-            module.hook(shareActivity.getDeclaredMethod(method)).intercept(chain -> {
+            }));
+            HOOKS.add(module.hook(symbols.method("adapter.label")).intercept(chain -> {
+                Object device = chain.getArg(1);
+                String key = device == null ? "" : symbols.key(device);
+                if (!key.startsWith(PREFIX)) return chain.proceed();
+                if ("IDLE".equals(String.valueOf(symbols.invoke("device.state", device)))) return "AirDrop";
+                String phase = PHASES.get(key);
+                return phase != null ? phase : chain.proceed();
+            }));
+            // The share panel also reads the manager directly after its list callback.
+            HOOKS.add(module.hook(symbols.method("manager.list")).intercept(chain -> {
+                ArrayList<Object> result = new ArrayList<>((java.util.List<?>) chain.proceed());
+                result.addAll(DEVICES.values());
+                return result;
+            }));
+            HOOKS.add(module.hook(symbols.method("manager.get")).intercept(chain -> {
+                Object device = DEVICES.get((String) chain.getArg(0));
+                return device != null ? device : chain.proceed();
+            }));
+            HOOKS.add(module.hook(symbols.method("activity.resume")).intercept(chain -> {
                 Object result = chain.proceed();
-                OShareAppearance.renameSection((Activity) chain.getThisObject());
+                Activity current = (Activity) chain.getThisObject();
+                activity = new WeakReference<>(current);
+                OShareAppearance.renameSection(current);
+                MAIN.postDelayed(() -> connect(current, 0), 1200);
                 return result;
-            });
-        }
-        module.hook(shareActivity.getDeclaredMethod("onDestroy")).intercept(chain -> {
-            if (activity.get() == chain.getThisObject()) {
-                activity.clear();
-                command("discover_stop", null);
-                DEVICES.clear();
+            }));
+            for (String role : new String[]{"activity.update", "activity.list", "activity.panel"}) {
+                HOOKS.add(module.hook(symbols.method(role)).intercept(chain -> {
+                    Object result = chain.proceed();
+                    OShareAppearance.renameSection((Activity) chain.getThisObject());
+                    return result;
+                }));
             }
-            return chain.proceed();
-        });
-        // Hook the common internal service so regular OShare traffic keeps its original path.
-        Class<?> impl = cl.loadClass("com.oplus.oshare.OShareClient$6");
-        module.hook(impl.getDeclaredMethod("sendData", Intent.class, wrapper)).intercept(chain -> {
-            Object device = chain.getArg(1);
-            String key = device == null ? "" : String.valueOf(call(device, "a"));
-            if (!key.startsWith(PREFIX)) return chain.proceed();
-            Intent request = new Intent((Intent) chain.getArg(0));
-            MAIN.post(() -> send(request, key));
-            return null;
-        });
-        module.hook(impl.getDeclaredMethod("cancelTask", wrapper)).intercept(chain -> {
-            Object device = chain.getArg(0);
-            String key = device == null ? "" : String.valueOf(call(device, "a"));
-            if (!key.startsWith(PREFIX)) return chain.proceed();
-            MAIN.post(() -> command("cancel", key));
-            return null;
-        });
-        module.log(Log.INFO, TAG, "OShare discovery, device list, send and cancel hooks installed");
+            HOOKS.add(module.hook(symbols.method("activity.destroy")).intercept(chain -> {
+                if (activity.get() == chain.getThisObject()) {
+                    activity.clear();
+                    command("discover_stop", null);
+                    DEVICES.clear();
+                }
+                return chain.proceed();
+            }));
+            // Hook the common internal service so regular OShare traffic keeps its original path.
+            HOOKS.add(module.hook(symbols.method("service.send")).intercept(chain -> {
+                Object device = chain.getArg(1);
+                String key = device == null ? "" : symbols.key(device);
+                if (!key.startsWith(PREFIX)) return chain.proceed();
+                Intent request = new Intent((Intent) chain.getArg(0));
+                MAIN.post(() -> send(request, key));
+                return null;
+            }));
+            HOOKS.add(module.hook(symbols.method("service.cancel")).intercept(chain -> {
+                Object device = chain.getArg(0);
+                String key = device == null ? "" : symbols.key(device);
+                if (!key.startsWith(PREFIX)) return chain.proceed();
+                MAIN.post(() -> command("cancel", key));
+                return null;
+            }));
+            module.log(Log.INFO, TAG, "OShare DexKit discovery, device list, send and cancel hooks installed");
+        } catch (Throwable failure) {
+            for (HookHandle handle : HOOKS) try { handle.unhook(); }
+            catch (Throwable cleanup) { failure.addSuppressed(cleanup); }
+            HOOKS.clear();
+            throw new IllegalStateException("OShare hook installation rolled back", failure);
+        }
     }
 
     private static void connect(Activity current, int attempt) {
@@ -190,19 +192,20 @@ public final class OShareBridge {
         try {
             JSONObject event = new JSONObject(message.getData().getString(BridgeMessenger.EXTRA_JSON, "{}"));
             String type = event.optString("ev");
+            if (event.optBoolean("incoming") || "incoming_transfer".equals(type)
+                    || "command_result".equals(type)) return true;
             String key = PREFIX + event.optLong("id");
             if ("target".equals(type) || "target_updated".equals(type)) {
                 Object device = DEVICES.get(key);
-                if (device == null) device = extendedDevice.getDeclaredConstructor().newInstance();
-                Context host = (Context) loader.loadClass("com.oplus.oshare.OShareApplication")
-                        .getMethod("h").invoke(null);
-                OShareAppearance.apply(host, device, event);
+                if (device == null) device = symbols.deviceConstructor.newInstance();
+                Context host = HostContext.get();
+                OShareAppearance.apply(host, device, event, symbols);
                 Entry.instance.log(Log.INFO, TAG, "discovered icon peer=" + key + " shareTargetType=" + event.optInt("type"));
-                call(device, "F", event.optString("name", "Apple device"));
-                call(device, "w", key);
-                call(device, "P", key);
-                call(device, "O", 0);
-                call(device, "D", System.currentTimeMillis());
+                symbols.invoke("device.setName", device, event.optString("name", "Apple device"));
+                symbols.invoke("device.setKey", device, key);
+                symbols.invoke("device.setWifiMac", device, key);
+                symbols.invoke("device.setVirtual", device, 0);
+                symbols.invoke("device.setFoundTime", device, System.currentTimeMillis());
                 if (!ACTIVE.contains(key)) {
                     PHASES.remove(key);
                     state(device, AirDropPresentation.DISCOVERED_STATE);
@@ -225,7 +228,7 @@ public final class OShareBridge {
                 if (device != null) {
                     int status = event.optInt("status");
                     state(device, AirDropPresentation.state(status, terminal));
-                    call(device, "H", Math.max(0, Math.min(100, (int) event.optDouble("progress"))));
+                    symbols.invoke("device.setProgress", device, Math.max(0, Math.min(100, (int) event.optDouble("progress"))));
                     refresh();
                 }
             } else if ("error".equals(type)) {
@@ -265,8 +268,7 @@ public final class OShareBridge {
         try {
             Entry.instance.log(Log.INFO, TAG, "OShare send intent=" + intent.getAction() + " hasStream=" + intent.hasExtra(Intent.EXTRA_STREAM));
             Activity current = activity.get();
-            Context context = current != null ? current : (Context) loader
-                    .loadClass("com.oplus.oshare.OShareApplication").getMethod("h").invoke(null);
+            Context context = current != null ? current : HostContext.get();
             LinkedHashSet<Uri> uris = new LinkedHashSet<>();
             if (Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())) {
                 ArrayList<Uri> streams = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri.class);
@@ -283,7 +285,7 @@ public final class OShareBridge {
                 intent.setExtrasClassLoader(loader);
                 Object list = intent.getSerializableExtra("data_list");
                 if (list instanceof Iterable<?>) for (Object data : (Iterable<?>) list) {
-                    Object uri = call(data, "s");
+                    Object uri = contentUri(data);
                     if (uri instanceof Uri) uris.add((Uri) uri);
                 }
             }
@@ -326,7 +328,7 @@ public final class OShareBridge {
             STARTED.put(key, android.os.SystemClock.elapsedRealtime());
             PHASES.put(key, "正在准备发送");
             Object device = DEVICES.get(key);
-            if (device != null) { state(device, "TRANSIT_WAIT"); call(device, "K", Math.max(1, uris.size())); refresh(); }
+            if (device != null) { state(device, "TRANSIT_WAIT"); symbols.invoke("device.setTotal", device, Math.max(1, uris.size())); refresh(); }
         } catch (Throwable t) { ACTIVE.remove(key); PHASES.remove(key); STARTED.remove(key); Entry.instance.log(Log.ERROR, TAG, "OShare send failed", t); toast("AirDrop 发送失败: " + t.getMessage()); }
     }
 
@@ -347,13 +349,12 @@ public final class OShareBridge {
     }
 
     private static void state(Object device, String name) throws Exception {
-        Class type = loader.loadClass("com.oplus.oshare.OplusOshareState");
-        call(device, "I", Enum.valueOf(type, name));
+        symbols.invoke("device.setState", device, symbols.state(name));
     }
 
     private static void refresh() throws Exception {
-        Object instance = manager.getDeclaredMethod("h").invoke(null);
-        manager.getDeclaredMethod("r").invoke(instance);
+        Object instance = symbols.invoke("manager.instance", null);
+        symbols.invoke("manager.refresh", instance);
         // Coalesce progress updates so the native ring redraws at a bounded rate.
         if (!refreshScheduled) {
             refreshScheduled = true;
@@ -361,18 +362,19 @@ public final class OShareBridge {
                 refreshScheduled = false;
                 Object[] adapters;
                 synchronized (ADAPTERS) { adapters = ADAPTERS.keySet().toArray(); }
-                for (Object adapter : adapters) try { call(adapter, "notifyDataSetChanged"); }
+                for (Object adapter : adapters) try { symbols.notifyAdapters.invoke(adapter); }
                 catch (Exception e) { Log.w(TAG, "adapter refresh failed", e); }
             }, 100);
         }
     }
 
-    private static Object call(Object target, String name, Object... args) throws Exception {
-        for (Method method : target.getClass().getMethods()) {
-            if (method.getName().equals(name) && method.getParameterCount() == args.length)
-                return method.invoke(target, args);
+    private static Uri contentUri(Object data) throws Exception {
+        ArrayList<Method> candidates = new ArrayList<>();
+        for (Method method : data.getClass().getMethods()) {
+            if (method.getParameterCount() == 0 && method.getReturnType() == Uri.class
+                    && !java.lang.reflect.Modifier.isStatic(method.getModifiers())) candidates.add(method);
         }
-        throw new NoSuchMethodException(name);
+        return (Uri) OShareDexResolver.unique("share data URI getter", candidates).invoke(data);
     }
 
     private static void toast(String text) {

@@ -71,6 +71,15 @@
 
 其他 npm 和 Gradle 构建依赖按各软件包随附的许可声明提供。
 
+## Unlock CN GMS
+
+- 作者：fei-ke；版本：v3.8。
+- 来源：用户提供的 `unlock-cn-gms-v3.8.zip` 与 `com.fei_ke.unlockcngms.zip`。
+- 作用：移除 `cn.google.services` 与 `com.google.android.feature.services_updater` 两项国行 GMS 限制声明。
+- 集成修改：在安装时生成独立配置副本，保留其他 XML 内容；由 KernelSU 的 `post-fs-data.sh` 在开机早期只读挂载，统一记录日志并停用同 ID 的独立旧模块。
+- 原说明、原安装脚本及原模块信息保存在 `third-party/unlock-cn-gms/`，两个输入包的 SHA256 见其中的 `provenance.json`。
+- 用户提供的压缩包没有附带许可证或许可证声明；不将这些原始材料重新标注为本项目 GPLv3。
+
 ## 其他构建接口与运行环境
 
 - [Vite](https://github.com/vitejs/vite)：WebUI 构建工具。
@@ -79,3 +88,11 @@
 - [KernelSU](https://github.com/tiann/KernelSU)：模块、挂载和 WebUI 运行环境。
 
 完整的使用与参考项目列表同时列在 [README](README.md#使用与参考项目)。
+
+## DexKit 与桥接运行依赖
+
+- [DexKit](https://github.com/LuckyPray/DexKit)，Maven 坐标 `org.luckypray:dexkit:2.3.0`，用于 OShare DEX 特征定位。未修改依赖；AAR 随桥接 APK 打包。该版本 POM 声明 LGPL-3.0 与 Apache-2.0，来源：[Maven Central](https://repo.maven.apache.org/maven2/org/luckypray/dexkit/2.3.0/)。
+- Kotlin 标准库 `org.jetbrains.kotlin:kotlin-stdlib:2.2.21`，Apache-2.0。
+- DexKit 的传递依赖包括 FlatBuffers Java `23.5.26`（Apache-2.0）与 Rikka NDK cxx `1.2.0`（对应依赖的 LLVM / libc++ 许可适用）。具体构建依赖以 Gradle 解析结果为准。
+
+[LGPLv3 条款](LICENSES/LGPL-3.0.txt) · [Apache 2.0 条款](LICENSES/Apache-2.0.txt)。DexKit 对应版本源码与原有版权声明由上游项目提供；项目未把厂商 APK 或分析样本纳入分发。

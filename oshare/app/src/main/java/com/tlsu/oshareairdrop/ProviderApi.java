@@ -53,6 +53,7 @@ public final class ProviderApi {
     private static Object transferCallback;
 
     private static boolean discovering;
+    private static boolean panelDiscovery, receiverDiscovery;
     private static boolean advertising;
 
     private ProviderApi() {}
@@ -67,7 +68,7 @@ public final class ProviderApi {
         SINKS.addIfAbsent(value);
     }
 
-    private static void emit(String type, JSONObject payload) {
+    static void emit(String type, JSONObject payload) {
         try {
             JSONObject json = payload == null ? new JSONObject() : payload;
             json.put("ev", type);
@@ -77,7 +78,8 @@ public final class ProviderApi {
             Log.i(TAG, "event " + json);
             if (Entry.instance != null) Entry.instance.log(Log.INFO, TAG,
                     "event=" + type + " id=" + json.optLong("id")
-                            + " status=" + json.optInt("status") + " files=" + json.optInt("files")
+                            + " status=" + json.optInt("status") + " files=" + (json.optJSONArray("files") == null
+                            ? json.optInt("files") : json.optJSONArray("files").length())
                             + " progress=" + json.optDouble("progress")
                             + ("error".equals(type) ? " " + json.optString("message") : ""));
         } catch (Throwable t) {
@@ -211,6 +213,14 @@ public final class ProviderApi {
     private static Object handleTransferCallback(String method, Object[] args,
             OutgoingTransfers.Lease<File> lease) {
         if (args == null || args.length < 2 || args[0] == null || args[1] == null) return null;
+        if (lease == null) {
+            try {
+                if (Boolean.TRUE.equals(field(args[0], "f"))) {
+                    IncomingReceiver.onTransfer(args[0], args[1]);
+                    return null;
+                }
+            } catch (Throwable failure) { Log.w(TAG, "incoming direction unavailable", failure); }
+        }
         // Ignore delayed callbacks belonging to an earlier transfer to this peer.
         if (lease != null && !OUTGOING.isCurrent(lease)) return null;
         Object target = args[0];
@@ -267,7 +277,7 @@ public final class ProviderApi {
     private static void onTargetLost(Object target) {
         try {
             long id = longField(target, "a");
-            if (!OUTGOING.isActive(id)) TARGETS.remove(id);
+            if (!OUTGOING.isActive(id) && !IncomingReceiver.active(id)) TARGETS.remove(id);
             JSONObject json = targetJson(target);
             json.put("id", id);
             emit("target_lost", json);
@@ -276,7 +286,7 @@ public final class ProviderApi {
         }
     }
 
-    private static JSONObject targetJson(Object target) throws Exception {
+    static JSONObject targetJson(Object target) throws Exception {
         JSONObject json = new JSONObject();
         json.put("id", longField(target, "a"));
         json.put("name", stringField(target, "b"));
@@ -292,6 +302,23 @@ public final class ProviderApi {
     }
 
     public static synchronized void startDiscovery() {
+        panelDiscovery = true;
+        ensureDiscovery();
+    }
+
+    static synchronized void startReceiverDiscovery() {
+        receiverDiscovery = true;
+        try { ensureDiscovery(); } catch (RuntimeException failure) { receiverDiscovery = false; throw failure; }
+    }
+
+    static synchronized void stopReceiverDiscovery() {
+        receiverDiscovery = false;
+        if (!panelDiscovery) haltDiscovery();
+    }
+
+    static boolean hasOutgoing() { return !OUTGOING_TARGETS.isEmpty(); }
+
+    private static void ensureDiscovery() {
         if (discovering) {
             for (Object target : TARGETS.values()) onTargetFound(target);
             return;
@@ -312,6 +339,11 @@ public final class ProviderApi {
     }
 
     public static synchronized void stopDiscovery() {
+        panelDiscovery = false;
+        if (!receiverDiscovery) haltDiscovery();
+    }
+
+    private static void haltDiscovery() {
         if (!discovering) return;
         int code = invokeInt("i", new Class<?>[]{});
         if (code != 0) throw new IllegalStateException("stopDiscovery returned " + code);
@@ -324,12 +356,36 @@ public final class ProviderApi {
         }
     }
 
+    static String localDeviceName() {
+        String stored = null, market = null;
+        try { stored = android.provider.Settings.Global.getString(HostContext.get().getContentResolver(), AirDropName.SETTING); }
+        catch (Exception failure) { Log.w(TAG, "custom AirDrop name unavailable", failure); }
+        try { market = (String) Class.forName("android.os.SystemProperties").getMethod("get", String.class, String.class)
+                .invoke(null, "ro.vendor.oplus.market.enname", ""); }
+        catch (Exception failure) { Log.w(TAG, "market device name unavailable", failure); }
+        return AirDropName.resolve(stored, market, android.os.Build.MODEL);
+    }
+
+    static synchronized void updateOwnedAdvertising(String name) {
+        Object options = newInstance("apj", new Class<?>[]{int.class, String.class, boolean.class, boolean.class},
+                0, name, true, false);
+        int code = invokeInt("j", new Class<?>[]{cls("apj")}, options);
+        if (code != 0) throw new IllegalStateException("updateAdvertising returned " + code);
+        emit("advertising_updated", new JSONObject());
+    }
+
+    static synchronized void startOwnedAdvertising(String name) {
+        // A previous caller may have installed a different callback on this controller.
+        advertising = false;
+        startAdvertising(name);
+    }
+
     public static synchronized void startAdvertising(String name) {
         if (advertising) return;
         String deviceName = name == null || name.isEmpty() ? "OPAirShare" : name;
         Object options = newInstance("apj",
                 new Class<?>[]{int.class, String.class, boolean.class, boolean.class},
-                1, deviceName, true, false);
+                0, deviceName, true, false);
         int code = invokeInt("f",
                 new Class<?>[]{cls("apj"), cls("aqa")}, options, ensureTransferCallback());
         if (code != 0) throw new IllegalStateException("startAdvertising returned " + code);
@@ -430,7 +486,7 @@ public final class ProviderApi {
             OUTGOING_TARGETS.put(lease, target);
             int code = invokeInt("d", new Class<?>[]{String.class,
                     cls("com.google.android.gms.nearby.sharing.ShareTarget"), cls("aqa")},
-                    android.os.Build.MODEL, target, callback);
+                    localDeviceName(), target, callback);
             if (code != 0) throw new IllegalStateException("send returned " + code);
             submitted = true;
             emit("send_requested", new JSONObject().put("id", targetId).put("code", code)
@@ -504,11 +560,37 @@ public final class ProviderApi {
         }
     }
 
+    static boolean nativeReceiveBusy() throws Exception {
+        Object receiver = field(provider(), "b");
+        Object state = field(receiver, "k");
+        Method get = state.getClass().getMethod("b"); get.setAccessible(true);
+        for (Object transfer : ((Map<?, ?>) get.invoke(state)).values()) {
+            Object metadata = field(transfer, "f");
+            if (!Boolean.TRUE.equals(field(metadata, "e"))) return true;
+        }
+        return false;
+    }
+
+    static boolean receiveExists(long id) throws Exception {
+        Object receiver = field(provider(), "b");
+        Object state = field(receiver, "k");
+        Method get = state.getClass().getMethod("b");
+        get.setAccessible(true);
+        return ((Map<?, ?>) get.invoke(state)).containsKey(id);
+    }
+
+    static void receiveAction(String action, Object target) {
+        int code = invokeInt(action,
+                new Class<?>[]{cls("com.google.android.gms.nearby.sharing.ShareTarget")}, target);
+        if (code != 0) throw new IllegalStateException("receive action " + action + " returned " + code);
+    }
+
     public static synchronized void accept(long targetId) {
         Object target = TARGETS.get(targetId);
         if (target == null) throw new IllegalStateException("unknown target id " + targetId);
         int code = invokeInt("a",
                 new Class<?>[]{cls("com.google.android.gms.nearby.sharing.ShareTarget")}, target);
+        if (code != 0) throw new IllegalStateException("accept returned " + code);
         emitCode("accepted", code);
     }
 
@@ -517,6 +599,7 @@ public final class ProviderApi {
         if (target == null) throw new IllegalStateException("unknown target id " + targetId);
         int code = invokeInt("c",
                 new Class<?>[]{cls("com.google.android.gms.nearby.sharing.ShareTarget")}, target);
+        if (code != 0) throw new IllegalStateException("deny returned " + code);
         emitCode("denied", code);
     }
 

@@ -7,6 +7,11 @@ import java.util.*;
 import java.lang.reflect.*;
 
 public class AppearanceStateTest {
+ private static final OShareAppearance.DeviceAccess ACCESS = new OShareAppearance.DeviceAccess() {
+  public String key(Object device){return ((Device)device).a();}
+  public void setType(Object device,int value){((Device)device).w0(value);}
+  public void setIcon(Object device,Bitmap value){((Device)device).t0(value);}
+ };
  public static class Device {
   public int type; public Bitmap bitmap;
   public void w0(int value){type=value;} public void t0(Bitmap value){bitmap=value;}
@@ -32,16 +37,16 @@ public class AppearanceStateTest {
   });
   Context context=new ContextWrapper(raw){public SharedPreferences getSharedPreferences(String name,int mode){return prefs;}};
   JSONObject target=new JSONObject().put("id",778899).put("name","Mimi").put("type",1);
-  Device phone=new Device();OShareAppearance.apply(context,phone,target);
+  Device phone=new Device();OShareAppearance.apply(context,phone,target,ACCESS);
   check(phone.type==1 && phone.bitmap!=null,"PHONE icon not bound");
   Field kinds=OShareAppearance.class.getDeclaredField("KINDS");kinds.setAccessible(true);((Map)kinds.get(null)).clear();
-  Device recreated=new Device();target.put("type",0);OShareAppearance.apply(context,recreated,target);
+  Device recreated=new Device();target.put("type",0);OShareAppearance.apply(context,recreated,target,ACCESS);
   check(recreated.type==1,"UNKNOWN after restart replaced known PHONE");
-  recreated.bitmap=null;OShareAppearance.restore(context,recreated);
+  recreated.bitmap=null;OShareAppearance.restore(context,recreated,ACCESS);
   check(recreated.bitmap!=null,"row rebind did not restore icon");
-  target.put("type",2);OShareAppearance.apply(context,recreated,target);
+  target.put("type",2);OShareAppearance.apply(context,recreated,target,ACCESS);
   check(recreated.type==2,"known TABLET update ignored");
-  recreated.bitmap.recycle();OShareAppearance.restore(context,recreated);
+  recreated.bitmap.recycle();OShareAppearance.restore(context,recreated,ACCESS);
   check(!recreated.bitmap.isRecycled(),"recycled cached bitmap reused");
   System.out.println("ANDROID_ICON_STATE_PASSED: PHONE, UNKNOWN after restart, row rebind, known type update, recycled bitmap recovery; native resources");
   System.exit(0);

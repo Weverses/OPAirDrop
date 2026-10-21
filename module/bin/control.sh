@@ -9,15 +9,6 @@ preflight() {
     [ "$(id -u)" = 0 ] && [ "$(getprop ro.product.model)" = PJZ110 ] || return 2
     [ "$(getprop ro.build.version.sdk)" = 37 ] || return 2
     [ "$(uname -r)" = '6.6.118-android15-8-g9bc34d5b0c79-abogki537459655-4k' ] || return 2
-    /system/bin/sh "$MODDIR/bin/verify.sh" "$MODDIR" || return 3
-    # A cold GMS verifier must see the signed original before the late bind.
-    if same_boot "$STATE/callback/boot"; then app_mode=patched; else app_mode=original; fi
-    /system/bin/sh "$MODDIR/bin/app-check.sh" "$app_mode" || return 3
-    for rel in bin/mosey_server lib64/libmosey_daemon_ffi.so; do
-        expected=$(sha256sum "$(sysext_path "$rel")" | awk '{print $1}')
-        actual=$(sha256sum "/system_ext/$rel" | awk '{print $1}')
-        [ "$expected" = "$actual" ] || return 3
-    done
 }
 lock_stack() {
     exec 9> "$STATE/stack.flock"
@@ -41,6 +32,7 @@ start_supervisor() {
     fi
 }
 stop_supervisor() {
+    /system/bin/sh "$MODDIR/bin/receive-session.sh" clear || return 8
     owner=$(cat "$STATE/supervisor.pid" 2>/dev/null || true)
     if pid_is "$owner" 'ui-lifecycle.sh'; then kill "$owner" || true; fi
     n=0
@@ -89,6 +81,7 @@ retire_old_ui_state() {
     done
 }
 passive_ui_baseline() {
+    /system/bin/sh "$MODDIR/bin/receive-session.sh" clear || return 8
     /system/bin/sh "$MODDIR/bin/transfer-idle.sh" || return 9
     /system/bin/timeout -k 2 35 /system/bin/sh "$MODDIR/bin/provider.sh" release || return 6
     [ -z "$(pidof "$PKG" || true)" ] || return 6

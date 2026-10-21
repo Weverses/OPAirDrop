@@ -21,7 +21,7 @@ import io.github.libxposed.api.XposedModuleInterface;
 
 public final class Entry extends XposedModule {
     public static volatile Entry instance;
-    public static final String REVISION = "oshare-v10-fixed149";
+    public static final String REVISION = "oshare-receive-v1";
     public static final String TAG = "OShareAirDrop";
     public static final String HOST = "com.google.android.mosey";
     public static final String BOOT_EXTRA = "oshare_bridge_boot";
@@ -40,7 +40,7 @@ public final class Entry extends XposedModule {
     public void onPackageLoaded(XposedModuleInterface.PackageLoadedParam param) {
         if (!param.isFirstPackage()) return;
         if ("com.coloros.oshare".equals(param.getPackageName())) {
-            try { OShareBridge.install(this, param.getDefaultClassLoader()); }
+            try { hookOShareApplication(param.getDefaultClassLoader()); }
             catch (Throwable t) { log(Log.ERROR, TAG, "unsupported OShare APK", t); }
             return;
         }
@@ -57,6 +57,30 @@ public final class Entry extends XposedModule {
         if (!HOST.equals(param.getPackageName())) return;
         if (!param.isFirstPackage()) return;
         ProviderHolder.install(param.getClassLoader());
+    }
+
+    private boolean oshareInstalled;
+
+    private void hookOShareApplication(ClassLoader loader) throws Exception {
+        Method onCreate = loader.loadClass("com.oplus.oshare.OShareApplication").getDeclaredMethod("onCreate");
+        hook(onCreate).intercept(chain -> {
+            Object result = chain.proceed();
+            try { OShareReceiveBridge.install(this, (Context) chain.getThisObject(), loader); }
+            catch (Throwable failure) { log(Log.ERROR, TAG, "OShare receive capability unavailable", failure); }
+            return result;
+        });
+        Method attach = Application.class.getDeclaredMethod("attach", Context.class);
+        hook(attach).intercept(chain -> {
+            Object result = chain.proceed();
+            if (!oshareInstalled) {
+                oshareInstalled = true;
+                Context context = (Context) chain.getArg(0);
+                HostContext.set(context.getApplicationContext() != null ? context.getApplicationContext() : context);
+                try { OShareBridge.install(this, context, loader); }
+                catch (Throwable failure) { log(Log.ERROR, TAG, "OShare DexKit resolution/install failed", failure); }
+            }
+            return result;
+        });
     }
 
     private void hookApplication(ClassLoader cl) {
@@ -109,6 +133,8 @@ public final class Entry extends XposedModule {
             hookSharingController(ProviderHolder.loader());
             hookDiscoveryChannels(ProviderHolder.loader(), app);
             hookPermissionActivity(ProviderHolder.loader());
+            BridgeMessenger.install(app);
+            ReceiveController.install(this, app, ProviderHolder.loader());
         }
         scheduleServiceStart(app);
     }
@@ -122,6 +148,12 @@ public final class Entry extends XposedModule {
                 String policy = (String) Class.forName("android.os.SystemProperties")
                         .getMethod("get", String.class, String.class)
                         .invoke(null, "debug.opairshare.discovery", "");
+                if (policy.isEmpty()) {
+                    // The verified pre-migration callback payload uses this property.
+                    policy = (String) Class.forName("android.os.SystemProperties")
+                            .getMethod("get", String.class, String.class)
+                            .invoke(null, "debug." + "op" + "13.discovery", "");
+                }
                 android.net.wifi.WifiManager wifi = (android.net.wifi.WifiManager)
                         context.getSystemService(Context.WIFI_SERVICE);
                 android.net.wifi.WifiInfo info = wifi.getConnectionInfo();
@@ -232,8 +264,8 @@ public final class Entry extends XposedModule {
                         Intent intent = activity.getIntent();
                         if (intent != null) {
                             Object client = intent.getParcelableExtra(BridgeMessenger.EXTRA_CLIENT);
-                            if (client instanceof Messenger) {
-                                BridgeMessenger.attach((Messenger) client);
+                            if (client instanceof Messenger && BridgeMessenger.allowedUid(activity.getLaunchedFromUid())) {
+                                BridgeMessenger.attach((Messenger) client, activity.getLaunchedFromUid());
                                 log(Log.INFO, TAG, "bridge client attached");
                             }
                             if (intent.getBooleanExtra(BOOT_EXTRA, false)) {
