@@ -67,8 +67,8 @@ stateDiagram-v2
     Sharing --> Sharing: 发现设备或传输文件
     Sharing --> Closing: 界面连续关闭，传输结束
     Closing --> Resident: Stop 完成，参数恢复
-    Resident --> Stock: Action 停止服务栈
-    Stock --> Resident: Action 启动服务栈
+    Resident --> Stock: control.sh stop
+    Stock --> Resident: control.sh start
 ```
 
 会话开始时，监督器取得 `settings.flock`，准备共存快照，再调用 `provider.sh ensure`。会话持续期间按周期确认 provider，并应用 Mosey socket 的缓冲配置。
@@ -87,14 +87,16 @@ opairshare_awdl_rx_mac_filter: used=0 armed=0 pending=0 active=0 fault=0
 
 `control.sh stop` 按顺序停止监督器、Java provider 和原生服务，释放会话状态，卸载本次加载的模块，再加载设备原厂 WLAN 与 `mac80211`，恢复 Wi-Fi 状态。
 
-模块 Action 根据当前 boot 的栈归属在 `start` 与 `stop` 间切换。`uninstall.sh` 调用相同的停止流程，并恢复 callback APK 挂载。
+`uninstall.sh` 调用相同的停止流程，并恢复 callback APK 挂载。调试时可通过 `control.sh start` 与 `control.sh stop` 管理服务栈。
 
 ## 3. OShare 分享桥接
 
 LSPosed 模块的入口为 `Entry`，分别在两个进程中安装适配：
 
-- `com.coloros.oshare`：安装 `OShareBridge`，连接系统互传界面。
+- `com.coloros.oshare`：在 `Application.attach` 后用 DexKit 解析并验证内部入口，再安装 `OShareBridge`，连接系统互传界面。
 - `com.google.android.mosey`：获取 provider 的 ClassLoader，安装服务、发现频道和设备类型相关的 hook。
+
+OShare 定位规则在 `OShareDexResolver` 中定义，`OShareApkFiles` 与 `OShareResolver` 负责 APK 指纹缓存，匹配缺失或有歧义时拒绝安装 hook。
 
 ### 3.1 命令与事件
 
@@ -128,6 +130,24 @@ OShare 桥接从 `ACTION_SEND`、`ACTION_SEND_MULTIPLE` 读取共享 URI、文�
 | `cross5g` | 5200 MHz | `[149]` |
 
 该逻辑将宿主国家码查询或频道回退结果与固定 149 的无线服务配置对齐，再交给 Mosey 的发现策略处理。
+
+### 3.4 AirDrop 接收
+
+OShare 接收使用独立的 `OShareReceiveResolver` / `OShareReceiveBridge`，在未导出的原生接收 Activity 中展示 COUI 界面；只对带本桥接 session 标记的实例跳过原协议生命周期。后台 Messenger 注册与命令入口校验 UID、Android 用户及注册客户端，重连后请求任务快照。
+
+Mosey 中的 `ReceiveController` 在 OShare 接收开启、root 共存准备就绪且接收 UI 已连接时取得广告与回调归属。保留原回调 / 下载目录，退出时恢复；已有原生接收任务时延迟接管。接收任务以每次 ASK 的单调请求 ID 和独立会话令牌关联，待确认、拒绝 / 取消清理、传输及发布均保留 busy 标记。
+
+Mosey 的下载目录参数是公共 Downloads 下的目录名。本桥接使用 `.OPAirShare-incoming`，完成后按源文件实际长度复制到 MediaStore。原生小型文本文件自动转 TextAttachment 并删除原文件的分支，仅对当前桥接拥有的文件附件禁用，以保留字节与文件名。保存失败可重试，成功后提供授权 content URI。
+
+`ui-lifecycle.sh` 同时管理发送界面和后台接收需求。联系人（2）与所有人（1）均允许 AirDrop 邀请，关闭（0）撤销新邀请；所有人时限交给原系统维护，联系人不提供 Apple 身份过滤。相关主机回归位于 `tests/test_receive_lifecycle.py`；目前真机已验证 Mac 发送文本文件、接收确认、保存及 SHA256 一致，其他场景仍待验证。
+
+### 3.5 AirDrop 名称
+
+WebUI 的 `name-set <UTF-8 hex>` / `name-reset` 独立于无线参数修改，不要求关闭接收会话。后端校验 UTF-8、控制字符和 64 字符上限，将十六进制值写入 Settings.Global 的 `opairshare_airdrop_name_hex`，状态返回当前生效配置、自定义值和默认属性值。输入从不作为 shell 源码解释。
+
+`AirDropName` 使用同样的 UTF-8 / 字符校验；默认读取 `ro.vendor.oplus.market.enname`，依次回退 `Build.MODEL`、`OPAirShare`。发送时即时读取名称；`ReceiveController` 在没有待确认 / 活动接收或发送时通过 Mosey UpdateAdvertising 更新广播，失败稍后重试。设置保存读回成功表示配置已持久化，Apple 列表实际刷新受协议更新与对端缓存影响。
+
+1.0.6 构建已完成；按用户要求停止后续测试，尚未部署或验证手机改名效果。
 
 ## 4. Mosey APK 适配
 

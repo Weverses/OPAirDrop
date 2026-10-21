@@ -1,12 +1,15 @@
-# OPAirShare
+# OPAirDrop
+
+作者：TimelessU
 
 为 Oplus Android 设备连接 AirDrop、Quick Share 与 OShare 分享入口。
 
-从系统分享面板选择文件后，OPAirShare 在互传界面显示 Apple 设备，并通过 AWDL 传输文件。项目使用 Mosey 分享服务，配合 Wonder、Qualcomm WLAN 驱动适配和 OShare 桥接。KernelSU 模块负责服务生命周期，WebUI 提供状态、共存设置、速度历史和日志入口。
+从系统分享面板选择文件后，OPAirDrop 在互传界面显示 Apple 设备，并通过 AWDL 传输文件。项目使用 Mosey 分享服务，配合 Wonder、Qualcomm WLAN 驱动适配和 OShare 桥接。KernelSU 模块负责服务生命周期，WebUI 提供状态、共存设置、速度历史和日志入口。
 
 ## 功能
 
 - **系统分享入口**：连接 OShare 与 Mosey provider，映射设备名称、设备类型、发送进度和取消事件。
+- **接收 AirDrop**：OShare 原生 COUI 邀请、进度、拒绝 / 取消与完成文件入口；联系人模式持续可见，所有人模式跟随系统时限，每次接收手动确认。
 - **AWDL 无线适配**：通过 Wonder、独立 provider 和 WLAN 驱动覆盖层连接协议服务与无线数据路径。
 - **按界面管理会话**：驱动与原生服务驻留，分享界面打开时启动发现，界面关闭且传输结束后释放无线会话。
 - **Wi-Fi 共存**：按当前 STA 频率选择同信道或跨 5 GHz 信道策略，并在会话结束后恢复参数。
@@ -69,12 +72,40 @@ sh oshare/tests/run.sh
 
 完成模块装配与安装后：
 
-1. 在 LSPosed 中启用 OShare AirDrop 桥接，选中 `com.coloros.oshare` 和 `com.google.android.mosey`。
+1. OPAirDrop 安装时会检测 LSPosed，自动安装、启用随包附带的 OShare 桥接，并为主用户添加 `com.coloros.oshare` 和 `com.google.android.mosey` 作用域。安装后重启一次。未检测到 LSPosed 时跳过桥接安装；安装 LSPosed 后重新安装本模块。
 2. 将手机连接到上表中的 Wi-Fi 信道，在文件管理器或相册中选择文件并打开系统互传界面。
 3. 在 Apple 设备上打开 AirDrop 可见性，在分享列表中选择设备并完成接收确认。
 4. 从 KernelSU 的模块 WebUI 查看服务状态、速度历史和共存设置。
 
-模块 Action 按钮切换整个服务栈的启动与停止。分享界面退出后的会话释放由后台监督器处理。
+模块服务开机自动启动，分享界面退出后的会话释放由后台监督器处理。
+
+恢复环境安装或 LSPosed 配置尚未初始化时，开机后自动重试，最多三次；若开机后才完成激活，需要再次重启。安装日志为 `/data/adb/opairshare/oshare-install.log`，配置前的数据库备份保存在同一目录。遇到不支持的 LSPosed 数据库结构时，保留原配置并输出错误，可在 LSPosed 中手动启用桥接及两个作用域。
+
+安装器检测到早期使用不同模块 ID 的同项目模块时，会将其停用，重启后由 OPAirDrop 接管，避免同时加载两套驱动。
+
+### AirDrop 显示名称（1.0.6）
+
+WebUI → 设置 → AirDrop 名称可保存自定义名称或恢复默认。默认读取 `ro.vendor.oplus.market.enname`，属性为空时回退到 `ro.product.model`；名称支持最多 64 个字符，保存在系统全局设置中，重启和模块升级后保留。留空或选择“恢复默认”会重新跟随默认属性值。
+
+接收广播与发送身份使用同一名称。没有待确认邀请或活动传输时更新广播；传输中修改将在当前任务结束后应用，Apple 端列表可能需要等待缓存刷新。
+
+### 接收 AirDrop（1.0.5）
+
+开启模块服务及 Wi-Fi 共存，将 OShare 接收范围设为“仅限联系人”即可持续接收；“所有人”也可使用，其时效由系统管理。Apple 设备选中手机后，在 OShare 弹窗中手动接受。关闭 OShare 接收后停止新邀请，正在传输或保存的任务继续完成。
+
+此映射不校验 Apple 联系人身份，附近的 Apple 设备均可发起邀请。普通文件保存到 `Download/OPAirShare`，图片和视频分别发布到 `Pictures/OPAirShare`、`Movies/OPAirShare`。当前已在 PJZ110 上验证 Mac 发送文本文件、OShare 接收确认、保存与 SHA256 一致；其他类型、多文件、大文件、锁屏和异常恢复尚待真机覆盖。
+
+### 内置国行 GMS 解锁
+
+从 OPAirDrop v1.0.1 起内置 fei-ke 的 Unlock CN GMS v3.8 功能。安装时检测支持的系统、厂商和 Oplus 自定义分区权限配置，生成配置副本，移除 `cn.google.services` 与 `com.google.android.feature.services_updater` 两项限制声明，并在开机早期只读挂载。其他 XML 配置及分区中的原文件保持完整；停用或卸载 OPAirDrop 并重启后恢复原配置。
+
+检测到独立的 `com.fei_ke.unlockcngms` 模块时，安装器在生成内置配置后将其停用。解锁日志为 `/data/adb/opairshare/gms-unlock.log`。Google 服务仍需在系统设置中开启。
+
+### KernelSU 在线更新
+
+从 v1.0.2 起，在 KernelSU 管理器中支持模块更新检查、更新日志查看、下载及覆盖安装。首次从旧版升级需要手动安装 v1.0.2 并重启，之后可在管理器中更新。
+
+更新源为 [GitHub 正式 Releases](https://github.com/Weverses/OPAirDrop/releases)，入口固定为 `https://github.com/Weverses/OPAirDrop/releases/latest/download/update.json`。每个正式版本需附带模块 ZIP、`update.json` 和 `changelog.md`；在线检查按 `versionCode` 比较版本，安装后重启生效。首次正式 Release 上传前，此地址尚不可用。
 
 ## 文档
 
@@ -89,7 +120,8 @@ sh oshare/tests/run.sh
 
 | 用途 | 标识 |
 | --- | --- |
-| 项目名称与 Java 类前缀 | `OPAirShare` |
+| 项目名称 | `OPAirDrop` |
+| Java 类前缀 | `OPAirShare` |
 | C 符号与文件名前缀 | `opairshare` |
 | 宏与环境变量前缀 | `OPAIRSHARE` |
 | KernelSU 模块 ID | `opairshare` |
@@ -128,6 +160,7 @@ sh oshare/tests/run.sh
 | [Motion for Vue](https://github.com/motiondivision/motion-vue) / [Motion](https://github.com/motiondivision/motion) | miuix-vue 使用的动画依赖 |
 | [Vite](https://github.com/vitejs/vite) | WebUI 构建 |
 | [Gradle](https://github.com/gradle/gradle) | Android 桥接工程构建 |
+| [DexKit](https://github.com/LuckyPray/DexKit) | 按语义特征解析 OShare 的内部混淆入口 |
 | [libxposed API](https://github.com/libxposed/api) | OShare / Mosey 桥接使用的 Xposed 接口 |
 | [LSPosed](https://github.com/LSPosed/LSPosed) | Android 桥接运行环境 |
 | [KernelSU](https://github.com/tiann/KernelSU) | 模块启动、挂载与 WebUI 运行环境 |
@@ -136,7 +169,7 @@ sh oshare/tests/run.sh
 
 ## 独立项目说明
 
-OPAirShare 是独立社区项目，与 **Google、Apple、Oplus（包括 OPPO、OnePlus）不存在隶属、官方合作或背书关系**。
+OPAirDrop 是独立社区项目，与 **Google、Apple、Oplus（包括 OPPO、OnePlus）不存在隶属、官方合作或背书关系**。
 
 文中涉及的品牌、产品名称和商标归各自权利人所有，用于说明兼容对象、技术来源和运行环境。项目代码的开源许可与这些品牌、产品及商标的权属分别适用。
 

@@ -1,6 +1,7 @@
 id=opairshare
-name=OPAirShare
-version=0.1.0-dev
-versionCode=1
-author=evermore
-description=Miuix-style KernelSU WebUI, guarded coexistence and persistent speed/boot settings. Fixed AWDL149/20MHz; exact PJZ110 SDK37 kernel only.
+name=OPAirDrop
+version=1.0.6
+versionCode=10006
+author=TimelessU
+description=为一加 13 开启 AirDrop，需要开启 Google 服务使用
+updateJson=https://github.com/Weverses/OPAirDrop/releases/latest/download/update.json

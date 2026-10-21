@@ -1,0 +1,52 @@
+name: Publish KernelSU update metadata
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable release tag (for example v1.0.2)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update-metadata:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: ksu-update-${{ github.event.release.tag_name || inputs.tag }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the existing stable release ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/opairdrop-release/input"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease > "$RUNNER_TEMP/opairdrop-release/release.json"
+          python3 - "$RUNNER_TEMP/opairdrop-release/release.json" <<'PY'
+          import json, sys
+          info = json.load(open(sys.argv[1]))
+          if info['isDraft'] or info['isPrerelease']:
+              raise SystemExit('A published stable release is required')
+          PY
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'OPAirDrop-v*-PJZ110.zip' --dir "$RUNNER_TEMP/opairdrop-release/input"
+      - name: Validate ZIP and generate update assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/release.py --archive-dir "$RUNNER_TEMP/opairdrop-release/input" --out "$RUNNER_TEMP/opairdrop-release/metadata" --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG"
+      - name: Upload KernelSU metadata and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/opairdrop-release/metadata/update.json" "$RUNNER_TEMP/opairdrop-release/metadata/changelog.md" "$RUNNER_TEMP/opairdrop-release/metadata/"*.zip.sha256 --repo "$GITHUB_REPOSITORY" --clobber

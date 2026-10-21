@@ -96,7 +96,7 @@ python3 tools/build-native.py \
 
 ```sh
 cd "$OPAIRSHARE_REPO/oshare"
-./gradlew :app:assembleDebug
+./gradlew :app:assembleRelease
 sh tests/run.sh
 cd "$OPAIRSHARE_REPO"
 ```
@@ -104,12 +104,14 @@ cd "$OPAIRSHARE_REPO"
 产物路径：
 
 ```text
-oshare/app/build/outputs/apk/debug/app-debug.apk
+oshare/app/build/outputs/apk/release/app-release.apk
 ```
 
-Gradle wrapper 使用 8.13，Android Gradle Plugin 使用 8.13.2。依赖仓库配置在 `oshare/settings.gradle.kts`，应用 ID 为 `com.tlsu.oshareairdrop`。
+Gradle wrapper 使用 8.13，Android Gradle Plugin 使用 8.13.2。依赖仓库配置在 `oshare/settings.gradle.kts`，应用 ID 为 `com.tlsu.oshareairdrop`。 OShare 动态定位依赖固定为 `org.luckypray:dexkit:2.3.0`，Kotlin 标准库固定为 `2.2.21`；native 库随 APK 打包。匹配规则位于 `oshare/app/src/main/java/com/tlsu/oshareairdrop/OShareDexResolver.java`，指定 APK 的离线验证入口为 `oshare/tests/run-dexkit-android.sh`。
 
-主机测试覆盖回调代理、发送任务、设备展示与发现频道选择。`tests/run-android.sh` 和 `tests/run-appearance-android.sh` 提供 Android 设备测试入口。
+release 关闭调试，沿用现有部署使用的 Android debug keystore 签名以支持覆盖升级，保留反射及 DexKit 所需代码。OShare 的版本名、版本码从 `module/module.prop` 读取，打包工具核对 release 元数据后才复制 APK。调试设备测试需要先单独执行 `./gradlew :app:assembleDebug`。
+
+主机测试覆盖回调代理、发送任务、设备展示、发现频道选择与 APK 内容指纹。`tests/run-android.sh` 和 `tests/run-appearance-android.sh` 提供 Android 设备测试入口。
 
 ## 6. Mosey 回调与发现补丁
 
@@ -271,6 +273,47 @@ python3 tools/kernel/module_exports.py --dump /path/to/module.ko
 
 ## 8. 模块装配
 
+### 8.1 当前发行包
+
+使用已校验的 `local-inputs/reference-r27/` 内核与 Mosey 运行组件，配合仓库最新用户态构建产物生成 OPAirDrop：
+
+```sh
+python3 tools/build-lsposed.py --sdk "$ANDROID_HOME"
+python3 tests/test_lsposed.py
+python3 tools/package.py
+```
+
+执行前完成上文的 WebUI、原生助手和 OShare release APK 构建。输出为 `dist/OPAirDrop-v1.0.4-PJZ110.zip`、`.zip.sha256`、`update.json` 和 `changelog.md`。模块名称、版本号、描述及在线更新地址以 `module/module.prop` 为准。
+
+打包器逐项核验参考二进制的 SHA256，保留其实际导出的内核模块名、sysfs 接口及回调属性名，填入对应的内核 build-id。模块路径、状态目录和最新用户态助手继续使用当前仓库名称。OShare 对参考回调属性提供兼容读取。本流程不会重编译内核或 Mosey 补丁；来源记录位于 ZIP 内的 `build-info.json`。
+
+安装脚本通过 Android 包管理器的标准输入安装 `companion/OShareAirDrop.apk`，通过 `app_process` 运行 `lsposed-setup.jar`。配置器支持旧式模块 ID 表和新版按用户启用表；修改前使用 SQLite 一致性备份，随后通过事务启用桥接并补齐主用户的两个作用域，保留其他模块及已有作用域。LSPosed 在重启后重新加载配置。未知表结构会拒绝修改，安装失败会保留日志并安排开机重试。
+
+v1.0.1 集成 Unlock CN GMS v3.8。`bin/setup-gms.sh` 在安装时读取 `bin/gms-paths.txt` 的 11 个候选路径，通过 `bin/gms-filter.awk` 仅移除两项目标 feature，生成 `gms-unlock/overlays/`、挂载清单和动态 SHA256 清单。`post-fs-data.sh` 在 Android 读取权限 XML 前调用 `bin/gms-unlock.sh`，检查目标路径后使用 KernelSU BusyBox 进行只读 bind mount，失败信息写入 `/data/adb/opairshare/gms-unlock.log`。生成的配置来自安装设备，不预置到发行 ZIP 中；输入包来源记录随包保存在 `third-party/unlock-cn-gms/`。
+
+运行 `python3 tests/test_gms_unlock.py` 检查 XML 保留、11 个位置、无匹配配置、重复安装、独立模块接管所需的已清理配置、目标路径、挂载失败及只读失败回滚路径。测试通过隔离的文件系统与 mount 替身执行。v1.0.4 起服务启动不再遍历文件清单或校验组件哈希；APK 原版/回调挂载切换仍按对应版本识别文件，避免混用认证状态。
+
+### 8.2 发布与在线更新
+
+KernelSU 读取 `module.prop` 的 `updateJson`，该地址指向 GitHub 最新正式 Release 的 `update.json` 附件。JSON 包含 `version`、整数 `versionCode`、`zipUrl` 和 `changelog`；下载和日志链接固定到对应版本标签，避免指向其他版本。`tools/package.py` 自动从实际 ZIP 内的版本信息及 `CHANGELOG.md` 生成这些文件，校验全部文件的 SHA256，遇到版本、标签、模块 ID、文件名或更新源不一致时拒绝生成。
+
+发布步骤：
+
+1. 更新 `module/module.prop` 中的语义化 `version`、递增的 `versionCode`，并在 `CHANGELOG.md` 添加对应版本段落。
+2. 运行 `python3 tests/test_release.py`、`python3 tools/check.py` 和 `python3 tools/package.py`。
+3. 将代码及 `.github/workflows/ksu-update.yml` 推送到主分支；在 GitHub 创建标签与模块版本一致的草稿 Release（例如 `v1.0.2`），上传 `dist/` 下的 ZIP、`.zip.sha256`、`update.json` 和 `changelog.md`，然后发布为正式 Release。
+4. `.github/workflows/ksu-update.yml` 在正式发布后，下载该版本 ZIP，核对其完整性和版本信息，重新生成并上传更新元数据及校验文件。需要重新生成时，在 Actions 中手动运行并填写现有正式 Release 标签。流程不会处理草稿或预发布版本，不会编译依赖本地输入的内核与 APK。
+
+也可在发布前独立核验：
+
+```sh
+python3 tools/release.py --zip dist/OPAirDrop-v1.0.2-PJZ110.zip --out dist --tag v1.0.2
+```
+
+首次 Release 发布前，线上更新入口不可访问；此前不含 `updateJson` 的旧版本需要手动安装新版一次。未发布时，本地生成的更新文件是待上传产物。
+
+### 8.3 组件手动装配
+
 当前构建入口按组件提供，模块使用以下布局装配：
 
 ```text
@@ -278,7 +321,7 @@ module/
 ├── module.prop
 ├── customize.sh
 ├── service.sh
-├── action.sh
+├── post-fs-data.sh                  ← 内置 GMS 解锁的开机早期挂载
 ├── uninstall.sh
 ├── sepolicy.rule
 ├── bin/
@@ -311,7 +354,7 @@ cp build/native/opairshare-socket-buffer build/package/module/payload/native/
 cp build/native/session-wifi.jar build/package/module/payload/native/
 ```
 
-其余产物按布局表放入对应目录。OShare APK 的文件名与 `customize.sh` 中显示的 companion 安装入口保持一致。
+其余产物按布局表放入对应目录。OShare APK 固定放在 `companion/OShareAirDrop.apk`，自动激活助手放在 `payload/native/lsposed-setup.jar`。
 
 装配后为原版 APK、补丁 APK 和模块运行文件生成安装器与运行脚本所需的文件清单。模块内路径以装配目录为根；清单覆盖模块配置、入口脚本、`bin/`、`webroot/`、`payload/` 和 `system/`。文件权限按 `customize.sh` 设置，ZIP 中保留 Unix 文件模式。
 
@@ -343,7 +386,7 @@ sh oshare/tests/run.sh
 2. 分别在 STA 5745 MHz 与 5200 MHz 下打开分享界面，记录发现设备、无线参数和普通 Wi-Fi 连通性。
 3. 双向传输文件，核对接收文件的大小与内容，检查进度、取消、连续发送和重新进入界面的行为。
 4. 关闭分享界面，检查 radio、matcher、pending 与共存快照的释放状态。
-5. 使用 Action 停止服务栈，核对原厂模块与 Wi-Fi 恢复状态。
+5. 使用 `control.sh stop` 停止服务栈，核对原厂模块与 Wi-Fi 恢复状态。
 6. 查看速度历史与导出日志，记录系统版本、模块版本、构建配置和测试结果。
 
 检查命令和状态字段的含义见 [技术实现说明](TECHNICAL.md)。
