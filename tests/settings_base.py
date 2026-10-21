@@ -27,8 +27,16 @@ framework() {{ cat '{self.base}/wifi'; }}
         for name,code in [('id','echo 0'),('flock','exit "${TEST_LOCK_BUSY:-0}"')]:
             p=self.tools/name;p.write_text('#!/bin/sh\n'+code+'\n');p.chmod(0o755)
         self.env=dict(os.environ,PATH=str(self.tools)+os.pathsep+os.environ['PATH'])
+        for name in ['airdrop-name.sh']:
+            (self.bin/name).write_text((ROOT/'module/bin'/name).read_text().replace('/system/bin/',str(self.tools)+'/'))
+        for name,code in [
+            ('getprop','case "$1" in ro.vendor.oplus.market.enname) echo "${TEST_MARKET_NAME-OnePlus 13}";;ro.product.model) echo PJZ110;;esac'),
+            ('xxd','exec /usr/bin/xxd "$@"'),
+            ('settings', 'case "$1" in get) cat "$NAME_STORE" 2>/dev/null || echo null;;put) [ "${TEST_NAME_WRITE_FAIL:-0}" = 0 ] || exit 1; printf "%s" "$4" > "$NAME_STORE";;delete) [ "${TEST_NAME_WRITE_FAIL:-0}" = 0 ] || exit 1; rm -f "$NAME_STORE";;esac')]:
+            tool=self.tools/name;tool.write_text('#!/bin/sh\n'+code+'\n');tool.chmod(0o755)
+        self.env['NAME_STORE']=str(self.base/'name-store')
         self.script=self.bin/'settings.sh'
-        self.script.write_text((ROOT/'module/bin/settings.sh').read_text().replace('/sys/module/qca_cld3_peach_v2/parameters',str(self.params)).replace('/system/bin/sh','sh'))
+        self.script.write_text((ROOT/'module/bin/settings.sh').read_text().replace('/sys/module/qca_cld3_peach_v2/parameters',str(self.params)).replace('/system/bin/sh','sh').replace('/system/bin/settings',str(self.tools/'settings')))
         self.turbo=(ROOT/'module/bin/turbo.sh').read_text().replace('/sys/module/qca_cld3_peach_v2/parameters',str(self.params))
         (self.bin/'turbo.sh').write_text(self.turbo)
         self.original={'opairshare_channel_state':'cookie=1 busy=0 fault=0 error=0 accepting=0 vdev=255 freq=0',

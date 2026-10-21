@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 const source=readFileSync(new URL('../webui/src/api.ts',import.meta.url),'utf8');
 const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.ES2020}}).outputText;
 const api=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
-const state={coexist:'on',scope:'auto',profile:'fast',autostart:'on',ready:'off',editable:'on'};
+const state={coexist:'on',scope:'auto',profile:'fast',autostart:'on',ready:'off',editable:'on',airdrop_name:'OnePlus 13',airdrop_name_default:'OnePlus 13',airdrop_name_custom:''};
 let calls=[];globalThis.window={ksu:{exec(command,options,callback){calls.push(command);queueMicrotask(()=>window[callback](0,JSON.stringify(state),''));}}};
 assert.equal((await api.API.status()).scope,'auto');
 let count=calls.length;await assert.rejects(()=>api.API.save({...state,profile:'fast; echo wrong'}),/允许范围/);assert.equal(calls.length,count);
@@ -25,3 +25,17 @@ assert.equal(await api.API.exportLogs(),'/sdcard/Download/OPAirShare/airdrop-tes
 window.ksu.exec=(command,options,callback)=>queueMicrotask(()=>window[callback](0,JSON.stringify({path:'/wrong/path'}),''));
 await assert.rejects(()=>api.API.exportLogs(),/路径无效/);
 console.log('Single coexist toggle preserves hidden defaults; log export command and path validation passed.');
+
+// Names cross the root shell as validated hex, including quotes and shell punctuation.
+const name="我的 OnePlus 📱 ' $(touch nope); `id`";
+assert.equal(api.nameHex(name),Buffer.from(name).toString('hex'));
+for(const value of ['x'.repeat(65),'📱'.repeat(65),'a\nb','\u0000','\u0080','\u2028','\ud800'])assert.throws(()=>api.nameHex(value));
+assert.equal(api.nameHex('📱'.repeat(64)).length,512);
+window.ksu.exec=(command,options,callback)=>{calls.push(command);if(command.includes('name-set')){state.airdrop_name_custom=name;state.airdrop_name=name;}if(command.endsWith('name-reset')){state.airdrop_name_custom='';state.airdrop_name=state.airdrop_name_default;}queueMicrotask(()=>window[callback](0,JSON.stringify(state),''));};
+await api.API.saveName(name);assert.ok(calls.some(c=>c.endsWith('name-set '+Buffer.from(name).toString('hex'))));
+await api.API.saveName('  ');assert.ok(calls.some(c=>c.endsWith('name-reset')));
+assert.equal(state.airdrop_name,'OnePlus 13');
+count=calls.length;await assert.rejects(()=>api.API.saveName('a\nb'));assert.equal(calls.length,count);
+window.ksu.exec=(command,options,callback)=>queueMicrotask(()=>window[callback](0,JSON.stringify(state),''));
+await assert.rejects(()=>api.API.saveName('other'),/不一致/);
+console.log('AirDrop name: Unicode, shell-safe encoding, limits, reset and readback passed.');

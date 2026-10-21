@@ -3,6 +3,7 @@
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
+. "$MODDIR/bin/airdrop-name.sh"
 init_state
 P=/sys/module/qca_cld3_peach_v2/parameters
 fail() { echo "$*" >&2;exit 8; }
@@ -18,7 +19,7 @@ scope() { [ -e "$STATE/coex-same149-only" ] && echo same149 || echo auto; }
 read_p() { if [ -r "$P/$1" ];then head -c 2048 "$P/$1";fi; }
 json_string() {
     # Data is rendered as text in the page; quote strings even for unusual SSIDs.
-    printf '%s' "$1" | awk 'BEGIN {printf "\""}
+    printf '%s' "$1" | LC_ALL=C awk 'BEGIN {printf "\""}
       {if(NR>1)printf "\\n";for(i=1;i<=length($0);i++) {
         c=substr($0,i,1);
         if(c=="\\")printf "\\\\";else if(c=="\"")printf "\\\"";
@@ -33,6 +34,10 @@ status() {
     case "$freq" in 5745) channel=149;;5200) channel=40;;'') channel=unknown;;*) channel=unsupported;;esac
     connected=$(printf '%s\n' "$wifi" | sed -n 's/^Wifi is connected to //p' | head -1)
     version=$(sed -n 's/^version=//p' "$MODDIR/module.prop")
+    name_hex=$(read_name_hex)
+    name_default=$(default_airdrop_name)
+    name_custom=$(decode_name_hex "$name_hex")
+    name_effective=${name_custom:-$name_default}
     radio=$(read_p opairshare_channel_state);matcher=$(read_p opairshare_awdl_rx_mac_filter)
     ready=off
     owner=$(cat "$STATE/supervisor.pid" 2>/dev/null || true)
@@ -58,6 +63,8 @@ status() {
     printf '{'
     pair awdl "$awdl";printf ',';pair quickshare "$quickshare";printf ',';pair oshare "$oshare";printf ','
     pair version "$version";printf ',';pair coexist "$(coexist)";printf ','
+    pair airdrop_name "$name_effective";printf ',';pair airdrop_name_default "$name_default";printf ','
+    pair airdrop_name_custom "$name_custom";printf ','
     pair scope "$(scope)";printf ',';pair profile "$(profile)";printf ','
     pair autostart "$(flag autostart)";printf ',';pair session "$session";printf ','
     pair editable "$editable";printf ',';pair ready "$ready";printf ','
@@ -83,6 +90,26 @@ idle() {
 }
 case "${1:-status}" in
     status) [ "$#" = 1 ] || exit 2;status;;
+    name-set|name-reset)
+        [ "$(id -u)" = 0 ] || fail '需要 KernelSU root 权限。'
+        if [ "$1" = name-set ];then
+            [ "$#" = 2 ] || exit 2
+            valid_name_hex "$2" || fail '名称需要包含 1–64 个字符，不能包含换行或控制字符。'
+            name_value=$(printf '%s' "$2" | tr A-F a-f)
+        else
+            [ "$#" = 1 ] || exit 2
+            name_value=
+        fi
+        # Name-only edits are safe while radio/transfer sessions remain active.
+        exec 7> "$STATE/name.flock";flock -n 7 7>&7 || fail '名称正在保存，请稍后重试。'
+        if [ -n "$name_value" ];then
+            result=$(/system/bin/settings put global "$AIR_NAME_KEY" "$name_value") || fail '保存 AirDrop 名称失败。'
+        else
+            result=$(/system/bin/settings delete global "$AIR_NAME_KEY") || fail '恢复默认名称失败。'
+        fi
+        [ "$(read_name_hex)" = "$name_value" ] || fail '名称保存结果未确认，请刷新后核对。'
+        status
+        ;;
     speed)
         [ "$#" = 1 ] || exit 2
         iface=/sys/class/net/mosey0

@@ -1,14 +1,38 @@
 <script setup lang="ts">
 import {ref,computed,watch,onMounted,onBeforeUnmount} from 'vue';
-import {MiuixSnackbarHost,MiuixScrollArea,MiuixIcon,MiuixNavigationBar,MiuixTopAppBar,MiuixIconButton,MiuixButton,MiuixCard,MiuixSmallTitle,MiuixText,MiuixSwitch,MiuixBasicComponent,showSnackbar} from 'miuix-vue';
+import {MiuixSnackbarHost,MiuixScrollArea,MiuixIcon,MiuixNavigationBar,MiuixTopAppBar,MiuixIconButton,MiuixButton,MiuixCard,MiuixSmallTitle,MiuixText,MiuixSwitch,MiuixInput,MiuixBasicComponent,showSnackbar} from 'miuix-vue';
 import {ScreenMirroring,Settings} from 'miuix-vue/icons';
 import {API,type Status,type HistoryData} from './api';
 const tab=ref(0),state=ref<Status|null>(null),busy=ref(false),error=ref(''),updated=ref('');
 const history=ref<HistoryData|null>(null),historyBusy=ref(false);
 const navItems=[{label:'状态'},{label:'设置'}];
 const icons=[ScreenMirroring,Settings];
-const settingsView=ref<'main'|'about'|'logs'>('main'),logs=ref('点击刷新读取模块日志。'),logBusy=ref(false),exportBusy=ref(false),exportedPath=ref('');
-const pageTitle=computed(()=>tab.value===0?'AirDrop':settingsView.value==='about'?'关于':settingsView.value==='logs'?'日志':'设置');
+const referenceProjects=[
+ {name:'OnePlusOSS',url:'https://github.com/OnePlusOSS/kernel_manifest',usage:'内核、Qualcomm WLAN 与 Oplus Wonder 源码基线'},
+ {name:'34306 / AirDropVivoCN',url:'https://github.com/34306/AirDropVivoCN',usage:'早期研究与部署方案'},
+ {name:'thelok1s / mosey-extended',url:'https://github.com/thelok1s/mosey-extended',usage:'KernelSU 模块组织、Mosey 部署与服务接入'},
+ {name:'FeelLiao / mosey-bada',url:'https://github.com/FeelLiao/mosey-bada',usage:'原生 Binder 服务接入与用户态分享架构'},
+ {name:'seemoo-lab / owl',url:'https://github.com/seemoo-lab/owl',usage:'AWDL 帧格式与频道字段分析'},
+ {name:'t4t5 / omdrop-owl',url:'https://github.com/t4t5/omdrop-owl',usage:'AWDL 时间窗口、固定频道与吞吐优化'},
+ {name:'UvejsGj / Windfall',url:'https://github.com/UvejsGj/Windfall',usage:'无线重传、接收响应与传输性能分析'},
+ {name:'luyanci / hybrid-miuix-webui',url:'https://github.com/luyanci/hybrid-miuix-webui',usage:'WebUI 组件布局与界面组织'},
+];
+const componentProjects=[
+ {name:'Vue',url:'https://github.com/vuejs/core',usage:'WebUI 应用框架'},
+ {name:'miuix-vue',url:'https://github.com/YuKongA/miuix-vue',usage:'WebUI 组件'},
+ {name:'Motion for Vue',url:'https://github.com/motiondivision/motion-vue',usage:'miuix-vue 动画依赖'},
+ {name:'Motion',url:'https://github.com/motiondivision/motion',usage:'miuix-vue 动画依赖'},
+ {name:'Vite',url:'https://github.com/vitejs/vite',usage:'WebUI 构建'},
+ {name:'Gradle',url:'https://github.com/gradle/gradle',usage:'Android 桥接工程构建'},
+ {name:'DexKit',url:'https://github.com/LuckyPray/DexKit',usage:'OShare 内部入口语义解析'},
+ {name:'libxposed API',url:'https://github.com/libxposed/api',usage:'OShare / Mosey 桥接接口'},
+ {name:'LSPosed',url:'https://github.com/LSPosed/LSPosed',usage:'Android 桥接运行环境'},
+ {name:'KernelSU',url:'https://github.com/tiann/KernelSU',usage:'模块启动、挂载与 WebUI 运行环境'},
+];
+const settingsView=ref<'main'|'about'|'logs'|'name'>('main'),logs=ref('点击刷新读取模块日志。'),logBusy=ref(false),exportBusy=ref(false),exportedPath=ref('');
+const nameDraft=ref('');
+const nameLength=computed(()=>[...nameDraft.value.trim()].length);
+const pageTitle=computed(()=>tab.value===0?'AirDrop':settingsView.value==='about'?'关于':settingsView.value==='logs'?'日志':settingsView.value==='name'?'AirDrop 名称':'设置');
 const editable=computed(()=>!!state.value&&state.value.editable==='on'&&!busy.value);
 const live=computed(()=>history.value?.live);
 const recorderOn=computed(()=>history.value?.recorder==='on');
@@ -26,6 +50,8 @@ watch(tab,next=>{settingsView.value='main';if(next===0)refreshHistory();});
 onMounted(()=>{refresh();refreshHistory();timer=setInterval(()=>{if(tab.value===0&&!document.hidden)refreshHistory();},2000);});
 async function readLogs(){if(logBusy.value)return;logBusy.value=true;try{logs.value=await API.logs()||'暂无日志';}catch(e){logs.value=e instanceof Error?e.message:String(e);}finally{logBusy.value=false;}}
 async function exportLogs(){if(exportBusy.value)return;exportBusy.value=true;try{exportedPath.value=await API.exportLogs();showSnackbar({message:'日志已保存到 Download/OPAirShare'});}catch(e){error.value=e instanceof Error?e.message:String(e);showSnackbar({message:error.value});}finally{exportBusy.value=false;}}
+function editName(){if(!state.value||busy.value)return;nameDraft.value=state.value.airdrop_name_custom;settingsView.value='name';}
+async function saveName(reset=false){if(busy.value||!state.value)return;busy.value=true;error.value='';try{state.value=await API.saveName(reset?'':nameDraft.value);nameDraft.value=state.value.airdrop_name_custom;showSnackbar({message:reset?'已恢复默认名称':'名称已保存'});}catch(e){error.value=e instanceof Error?e.message:String(e);showSnackbar({message:error.value});}finally{busy.value=false;}}
 function openLogs(){settingsView.value='logs';readLogs();}
 onBeforeUnmount(()=>{if(timer)clearInterval(timer);});
 </script>
@@ -57,13 +83,26 @@ onBeforeUnmount(()=>{if(timer)clearInterval(timer);});
    <template v-else-if="settingsView==='main'">
     <MiuixSmallTitle text="连接"/>
     <MiuixCard><MiuixBasicComponent title="与 Wi-Fi 共存"><template #end><MiuixSwitch :model-value="state?.coexist==='on'" :disabled="!editable" aria-label="与Wi-Fi共存" @update:model-value="changeCoexist($event)"/></template></MiuixBasicComponent></MiuixCard>
+    <MiuixSmallTitle text="设备"/>
+    <MiuixCard><MiuixBasicComponent title="AirDrop 名称" :summary="state?.airdrop_name||'读取中'" :disabled="busy||!state" clickable @click="editName"><template #end><span class="entry-arrow">›</span></template></MiuixBasicComponent></MiuixCard>
     <MiuixSmallTitle text="通用"/>
     <MiuixCard><MiuixBasicComponent title="关于" clickable @click="settingsView='about'"><template #end><span class="entry-arrow">›</span></template></MiuixBasicComponent><MiuixBasicComponent title="查看日志" clickable @click="openLogs"><template #end><span class="entry-arrow">›</span></template></MiuixBasicComponent><MiuixBasicComponent title="导出日志" :summary="exportBusy?'正在导出…':undefined" :disabled="exportBusy" clickable @click="exportLogs"><template #end><span class="entry-arrow">↗</span></template></MiuixBasicComponent></MiuixCard>
     <div v-if="exportedPath" class="export-result"><b>日志已导出</b><p>{{exportedPath}}</p></div>
    </template>
+   <template v-else-if="settingsView==='name'">
+    <MiuixSmallTitle text="附近设备看到的名称"/>
+    <MiuixCard><form class="name-form" @submit.prevent="saveName()">
+     <MiuixInput v-model="nameDraft" label="显示名称" :placeholder="state?.airdrop_name_default" :single-line="true" :disabled="busy"/>
+     <div class="name-caption"><span>留空使用默认名称：{{state?.airdrop_name_default}}</span><span :class="{'name-limit':nameLength>64}">{{nameLength}}/64</span></div>
+     <p class="name-hint">保存后更新附近 Apple 设备看到的名称；传输中将在结束后更新。</p>
+     <div class="name-actions"><MiuixButton :disabled="busy||!state||(!nameDraft&&!state.airdrop_name_custom)" @click="saveName(true)">恢复默认</MiuixButton><MiuixButton :disabled="busy||!state||nameLength>64" @click="saveName()">{{busy?'正在保存…':'保存'}}</MiuixButton></div>
+    </form></MiuixCard>
+   </template>
    <template v-else-if="settingsView==='about'">
-    <MiuixCard><div class="about-page"><h2>OPAirShare AirDrop</h2><p>{{state?.version||'版本读取中'}}</p><p>QuickShare · OShare · AWDL</p></div></MiuixCard>
-    <MiuixSmallTitle text="界面"/><MiuixCard><MiuixBasicComponent title="Vue + miuix-vue"/><MiuixBasicComponent title="参考项目" summary="luyanci / hybrid-miuix-webui"/></MiuixCard>
+    <MiuixCard><div class="about-page"><h2>OPAirDrop</h2><p>{{state?.version||'版本读取中'}}</p><p>作者：TimelessU</p></div></MiuixCard>
+    <MiuixSmallTitle text="参考项目"/><MiuixCard><a v-for="project in referenceProjects" :key="project.url" class="project-link" :href="project.url" target="_blank" rel="noopener noreferrer"><MiuixBasicComponent :title="project.name" :summary="project.usage"><template #end><span class="entry-arrow">↗</span></template></MiuixBasicComponent></a></MiuixCard>
+    <MiuixSmallTitle text="组件、构建工具与运行环境"/><MiuixCard><a v-for="project in componentProjects" :key="project.url" class="project-link" :href="project.url" target="_blank" rel="noopener noreferrer"><MiuixBasicComponent :title="project.name" :summary="project.usage"><template #end><span class="entry-arrow">↗</span></template></MiuixBasicComponent></a><MiuixBasicComponent title="Unlock CN GMS v3.8" summary="fei-ke · 内置国行 GMS 解锁"/></MiuixCard>
+    <div class="about">各项目的贡献归原作者所有。</div>
 
    </template>
    <template v-else>
