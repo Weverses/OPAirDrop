@@ -7,6 +7,10 @@ plugins {
 val moduleProperties = Properties().apply {
     rootProject.file("../module/module.prop").reader(Charsets.UTF_8).use { load(it) }
 }
+val signingProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+}
+fun signingValue(name: String): String? = signingProperties.getProperty(name) ?: System.getenv(name)
 
 android {
     namespace = "com.tlsu.oshareairdrop"
@@ -22,15 +26,25 @@ android {
 
     buildFeatures { buildConfig = true }
 
+    signingConfigs {
+        create("release") {
+            signingValue("KEYSTORE_PATH")?.let { storeFile = file(it) }
+            storePassword = signingValue("KEYSTORE_PASS")
+            keyAlias = signingValue("KEY_ALIAS")
+            keyPassword = signingValue("KEY_PASSWORD")
+            enableV3Signing = true
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             isDebuggable = false
-            // Existing deployments use this identity; retain it for in-place upgrades.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

@@ -109,7 +109,7 @@ oshare/app/build/outputs/apk/release/app-release.apk
 
 Gradle wrapper 使用 8.13，Android Gradle Plugin 使用 8.13.2。依赖仓库配置在 `oshare/settings.gradle.kts`，应用 ID 为 `com.tlsu.oshareairdrop`。 OShare 动态定位依赖固定为 `org.luckypray:dexkit:2.3.0`，Kotlin 标准库固定为 `2.2.21`；native 库随 APK 打包。匹配规则位于 `oshare/app/src/main/java/com/tlsu/oshareairdrop/OShareDexResolver.java`，指定 APK 的离线验证入口为 `oshare/tests/run-dexkit-android.sh`。
 
-release 关闭调试，沿用现有部署使用的 Android debug keystore 签名以支持覆盖升级，保留反射及 DexKit 所需代码。OShare 的版本名、版本码从 `module/module.prop` 读取，打包工具核对 release 元数据后才复制 APK。调试设备测试需要先单独执行 `./gradlew :app:assembleDebug`。
+release 关闭调试，保留反射及 DexKit 所需代码。debug 和 release 均使用与 OplusCameraPro 相同的自有签名，通过未入库的 `oshare/local.properties` 或环境变量提供 `KEYSTORE_PATH`、`KEYSTORE_PASS`、`KEY_ALIAS`、`KEY_PASSWORD`；密钥库位于项目外，缺少配置时不会回退到 Debug 签名。此前 Debug 签名的桥接需要先手动卸载，才能安装新签名版本。OShare 的版本名、版本码从 `module/module.prop` 读取，打包工具核对 release 元数据后才复制 APK。调试设备测试需要先单独执行 `./gradlew :app:assembleDebug`。
 
 主机测试覆盖回调代理、发送任务、设备展示、发现频道选择与 APK 内容指纹。`tests/run-android.sh` 和 `tests/run-appearance-android.sh` 提供 Android 设备测试入口。
 
