@@ -2,6 +2,8 @@
 
 连接 OShare 系统分享界面与 Mosey provider 的 LSPosed 模块。OShare 的内部入口与设备属性通过 DexKit 2.3.0 动态解析。
 
+桥接 APK 仅提供 Xposed 功能，没有独立 Activity、桌面图标或 LSPosed 设置页。模块设置和日志使用 KernelSU WebUI，文件收发使用系统互传界面及宿主中的接收对话框。
+
 ## 构建
 
 环境：JDK 17、Android SDK Platform 37。项目使用 Gradle wrapper 8.13、AGP 8.13.2 与 libxposed API 102.0.0。
@@ -11,7 +13,9 @@
 sh tests/run.sh
 ```
 
-正式构建 APK 输出到 `app/build/outputs/apk/release/app-release.apk`，应用 ID 为 `com.tlsu.oshareairdrop`。release 关闭调试，沿用现有部署所使用的 Android debug keystore 签名，支持原版本覆盖升级；版本名与版本码从根目录 `module/module.prop` 读取。打包工具只接受与模块版本一致的 release 产物。
+正式构建 APK 输出到 `app/build/outputs/apk/release/app-release.apk`，应用 ID 为 `com.tlsu.oshareairdrop`。release 关闭调试，debug 和 release 均使用与 OplusCameraPro 相同的自有密钥签名；版本名与版本码从根目录 `module/module.prop` 读取。打包工具只接受与模块版本一致的 release 产物。
+
+在已忽略的 `oshare/local.properties` 或环境变量中配置 `KEYSTORE_PATH`、`KEYSTORE_PASS`、`KEY_ALIAS`、`KEY_PASSWORD`，私钥保留在外部密钥库中。缺少签名配置时不会回退到 Android Debug 签名。签名变更前的 Debug 签名 APK 不能直接覆盖安装，需要先手动卸载旧桥接；KSU 安装脚本保持原逻辑。
 
 调试与现有设备测试脚本仍可使用 `./gradlew :app:assembleDebug`，输出到 `app/build/outputs/apk/debug/app-debug.apk`。
 
@@ -23,6 +27,16 @@ sh tests/run.sh
 | `com.google.android.mosey` | provider 调用、设备发现和传输回调 |
 
 主机测试覆盖回调代理、发送任务、设备展示与发现频道选择。Android 测试入口为 `tests/run-android.sh` 和 `tests/run-appearance-android.sh`。
+
+### 桥接握手与诊断
+
+启动 Mosey 的 Activity 显式共享调用方身份，接收端继续校验同一 Android 用户下的受信 UID。不得通过接受 `INVALID_UID` 或信任 Intent 自报 UID 来绕过身份校验。
+
+握手分为 `MSG_ATTACHED`（客户端已通过校验）和 `MSG_HELLO`（provider 已就绪）。入口启动后每 2 秒通过广播重试接入，最多 4 次，10 秒仍未就绪时按阶段提示；广播重试不会再次拉起 Activity。页面销毁或连接成功后，旧连接轮次的延迟任务失效。Binder 断开后清理过期设备，仅在分享页面仍存在时尝试重连，文件需要重新发送。
+
+日志标签为 `OShareAirDrop`。`bridge boot rejected uid=-1` 表示启动方身份未传递；`bridge client admitted ... providerReady=false` 表示身份校验已通过，正在等待 provider；`OShare bridge ready` 表示发送桥接完成。新客户端的 HELLO 仅回复该客户端，避免触发已有客户端重复开启发现。
+
+`tests/run-android.sh` 包含独立握手回归，检查启动身份共享、匿名拒绝、provider 延迟就绪及多个客户端互不干扰。该测试使用临时 app_process，不替换已安装应用；完整发现与收发仍需安装构建后的 APK 验证。
 
 模块运行脚本位于仓库根目录的 `module/`。跨进程通信、任务归属和文件传递见 [技术实现说明](../docs/TECHNICAL.md#3-oshare-分享桥接)，完整构建流程见 [构建说明](../docs/BUILD.md#5-oshare-桥接-apk)。
 

@@ -57,7 +57,7 @@ com.google.android.moseyservice.IMoseyService/default
 
 ### 2.2 分享会话
 
-`ui-lifecycle.sh` 从 `dumpsys activity activities` 识别前台 Activity。它跟踪 Quick Share、OShare 互传界面和桥接应用的诊断界面，并将同一分享任务中的文件选择器纳入会话。
+`ui-lifecycle.sh` 从 `dumpsys activity activities` 识别前台 Activity。它跟踪 Quick Share 和 OShare 互传界面，并将同一分享任务中的文件选择器纳入会话。桥接 APK 无独立界面，管理入口为 KernelSU WebUI。
 
 ```mermaid
 stateDiagram-v2
@@ -102,7 +102,7 @@ OShare 定位规则在 `OShareDexResolver` 中定义，`OShareApkFiles` 与 `OSh
 
 主分享链路使用 `BridgeMessenger`。OShare 端传入客户端 `Messenger`，Mosey 端返回命令通道；命令调用 `ProviderApi`，发现与传输事件以 JSON 回送到界面。
 
-源码中还保留了 `BridgeServer` 的本地 socket 通道实现，socket 名为 `oshare_airdrop_bridge`。当前 OShare 与诊断 Activity 的入口均使用 `BridgeMessenger`。
+源码中还保留了 `BridgeServer` 的本地 socket 通道实现，socket 名为 `oshare_airdrop_bridge`。当前系统互传入口使用 `BridgeMessenger`。
 
 | 类 | 职责 |
 | --- | --- |
@@ -135,11 +135,11 @@ OShare 桥接从 `ACTION_SEND`、`ACTION_SEND_MULTIPLE` 读取共享 URI、文�
 
 OShare 接收使用独立的 `OShareReceiveResolver` / `OShareReceiveBridge`，在未导出的原生接收 Activity 中展示 COUI 界面；只对带本桥接 session 标记的实例跳过原协议生命周期。后台 Messenger 注册与命令入口校验 UID、Android 用户及注册客户端，重连后请求任务快照。
 
-Mosey 中的 `ReceiveController` 在 OShare 接收开启、root 共存准备就绪且接收 UI 已连接时取得广告与回调归属。保留原回调 / 下载目录，退出时恢复；已有原生接收任务时延迟接管。接收任务以每次 ASK 的单调请求 ID 和独立会话令牌关联，待确认、拒绝 / 取消清理、传输及发布均保留 busy 标记。
+Mosey 中的 `ReceiveController` 在模块后台接收开启、root 共存准备就绪且接收 UI 已连接时取得广告与回调归属。保留原回调 / 下载目录，退出时恢复；已有原生接收任务时延迟接管。接收任务以每次 ASK 的单调请求 ID 和独立会话令牌关联，待确认、拒绝 / 取消清理、传输及发布均保留 busy 标记。
 
 Mosey 的下载目录参数是公共 Downloads 下的目录名。本桥接使用 `.OPAirShare-incoming`，完成后按源文件实际长度复制到 MediaStore。原生小型文本文件自动转 TextAttachment 并删除原文件的分支，仅对当前桥接拥有的文件附件禁用，以保留字节与文件名。保存失败可重试，成功后提供授权 content URI。
 
-`ui-lifecycle.sh` 同时管理发送界面和后台接收需求。联系人（2）与所有人（1）均允许 AirDrop 邀请，关闭（0）撤销新邀请；所有人时限交给原系统维护，联系人不提供 Apple 身份过滤。相关主机回归位于 `tests/test_receive_lifecycle.py`；目前真机已验证 Mac 发送文本文件、接收确认、保存及 SHA256 一致，其他场景仍待验证。
+`ui-lifecycle.sh` 同时管理发送界面和后台接收需求。从 1.0.11 起，后台接收由模块与共存开关控制，独立于 oshare_state 和原生时限。OShare 宿主通过模块拥有的前台服务代理保持运行；撤销新邀请不释放忙碌的接收宿主，确认空闲后才释放代理。相关主机回归位于 `tests/test_receive_lifecycle.py`；目前真机已验证 Mac 发送文本文件、接收确认、保存及 SHA256 一致，其他场景仍待验证。
 
 ### 3.5 AirDrop 名称
 
