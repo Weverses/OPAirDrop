@@ -61,3 +61,11 @@ sh tests/run-receive-dexkit-android.sh /absolute/path/to/OShare.apk baseline
 ```
 
 接收开关行为及真机验证范围见 [技术实现说明](../docs/TECHNICAL.md#34-airdrop-接收)。
+
+## 原生 Seedling 展示（1.0.13）
+
+`OShareSeedlingResolver` 独立定位 OShare 卡片 provider 和 ROM 支持判断，绑定 Seedling SDK 完整签名。`OShareSeedlingAssets` 只读取已安装 OShare 的原始 UPK，检查实际使用页面的按钮显隐及带实例 ID 的进度事件；不复制或修改厂商模板。
+
+`OShareNativeReceivePresenter` 按会话和交互阶段分配卡片实例，使用原生 SDK 发送 START / 更新 / END。只有系统返回与本机资源版本一致的卡片并确认创建后才收起自动进度弹窗；显式打开的详情保留。卡片实例对应的旧阶段动作会被消耗，未标记的 OShare 卡片沿用原路径。
+
+原始接收确认按钮缺少实例标识，继续使用现有邀请弹窗；完成文件入口保留会话 URI。SDK 初始化与调用异步执行，避免阻塞原接收握手和主线程。1.0.14 已按授权安装并重启作用域，由用户确认胶囊可用；未运行自动传输测试。详细范围见 [实现说明](../docs/OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。

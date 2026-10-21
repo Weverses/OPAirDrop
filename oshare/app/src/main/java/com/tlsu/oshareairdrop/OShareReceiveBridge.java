@@ -30,6 +30,7 @@ import java.util.Map;
 /** Independent, session-scoped receive UI hosted by OShare's private dialog Activity. */
 public final class OShareReceiveBridge {
     private static final String EXTRA_SESSION = "opairshare_receive_session";
+    private static final String EXTRA_DETAILS = "opairshare_receive_details";
     private static final String CHANNEL = "opairshare_receive";
     private static final String NOTIFICATION_TAG = "opairshare_receive";
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
@@ -50,6 +51,7 @@ public final class OShareReceiveBridge {
     }, () -> server != null && server.getBinder().isBinderAlive(), OShareReceiveBridge::connectBackground);
     private static WeakReference<Activity> visible = new WeakReference<>(null);
     private static boolean installed;
+    private static OShareNativeReceivePresenter nativePresenter;
     private static String launching = "";
     private static int nextNotification = 10000;
 
@@ -72,6 +74,7 @@ public final class OShareReceiveBridge {
                 owner.getInvoker(roles.supers.get("onCreate")).invokeSpecial(activity, chain.getArg(0));
                 activity.setTitle("");
                 Screen screen = new Screen(activity, activity.getIntent().getStringExtra(EXTRA_SESSION));
+                screen.manual = activity.getIntent().getBooleanExtra(EXTRA_DETAILS, false);
                 SCREENS.put(activity, screen); visible = new WeakReference<>(activity); launching = "";
                 screen.render();
                 command("receive_snapshot", null);
@@ -103,6 +106,7 @@ public final class OShareReceiveBridge {
                 // A delayed terminal notification must not cover a newer active invitation.
                 if (current != null && !current.terminal() && (next == null || next.terminal())) return null;
                 activity.setIntent(intent); screen.session = session; screen.phase = "";
+                screen.manual = intent.getBooleanExtra(EXTRA_DETAILS, false);
                 launching = ""; screen.render();
                 return null;
             }));
@@ -137,6 +141,26 @@ public final class OShareReceiveBridge {
                 if (screen == null) return chain.proceed();
                 screen.render(); return null;
             }));
+            // SDK binding and UPK reads must not delay the existing receiver handshake.
+            java.util.concurrent.Executors.newSingleThreadExecutor(action -> new Thread(action, "OShare-SeedlingInit"))
+                    .execute(() -> {
+                OShareNativeReceivePresenter prepared = OShareNativeReceivePresenter.install(owner, app, loader,
+                    new OShareNativeReceivePresenter.Host() {
+                        @Override public void changed(String session) { nativePresentationChanged(session); }
+                        @Override public void open(String session) { openSession(session); }
+                        @Override public boolean command(String session, String action) {
+                            Task task = TASKS.get(session);
+                            return task != null && !task.terminal() && OShareReceiveBridge.command(action, task);
+                        }
+                    });
+                MAIN.post(() -> {
+                    nativePresenter = prepared;
+                    if (prepared == null) return;
+                    for (Task task : new ArrayList<>(TASKS.values())) {
+                        if (!task.terminal()) prepared.update(task.json, task.notification, task.title(), task.summary());
+                    }
+                });
+            });
             BridgeMessenger.observeReadiness(app, RECONNECT::wake);
             installed = true;
             StartupTrace.mark("RECEIVE_HOST_READY");
@@ -230,9 +254,16 @@ public final class OShareReceiveBridge {
         TASKS.put(session, task);
         if (!task.pending()) SUBMITTED.remove(session);
         pruneHistory();
+        // The Seedling options associate this notification ID with the native card.
+        // Keep the backing notification alive so END/fallback can reveal its file entry.
         notifyTask(task);
+        boolean nativeShown = nativePresenter != null
+                && nativePresenter.update(task.json, task.notification, task.title(), task.summary());
         Screen screen = currentScreen();
-        if (screen != null && session.equals(screen.session)) screen.render();
+        if (screen != null && session.equals(screen.session)) {
+            if (nativeShown && !screen.manual) { screen.dismiss(); screen.activity.finish(); }
+            else screen.render();
+        }
         if (screen != null && old == null && task.pending() && !task.terminal()) {
             Task shown = TASKS.get(screen.session);
             if (shown == null || shown.terminal()) {
@@ -240,12 +271,35 @@ public final class OShareReceiveBridge {
                 screen.activity.setIntent(intent(task)); screen.render();
             }
         }
-        if (old == null && !task.terminal() && task.pending() && screen == null && launching.isEmpty() && canPresent()) {
+        if (old == null && !nativeShown && !task.terminal() && task.pending() && screen == null && launching.isEmpty() && canPresent()) {
             launching = session;
             try { app.startActivity(intent(task)); }
             catch (Throwable failure) { launching = ""; log("receive invitation available in notification", failure); }
             MAIN.postDelayed(() -> { if (session.equals(launching)) launching = ""; }, 5000);
         }
+    }
+
+    private static void nativePresentationChanged(String session) {
+        Task task = TASKS.get(session);
+        if (task == null) return;
+        boolean shown = nativePresenter != null && nativePresenter.replacesDialog(session);
+        notifyTask(task);
+        Screen screen = currentScreen();
+        if (screen != null && session.equals(screen.session)) {
+            if (shown && !screen.manual) { screen.dismiss(); screen.activity.finish(); }
+            else screen.render();
+        }
+    }
+
+    private static void openSession(String session) {
+        Task task = TASKS.get(session);
+        if (task == null) return;
+        // This is only a view operation. Acceptance always carries the session token
+        // through an explicit button action, including when the card is on lockscreen.
+        launching = session;
+        try { app.startActivity(intent(task).putExtra(EXTRA_DETAILS, true)); }
+        catch (Throwable failure) { launching = ""; notifyTask(task); log("native card details available in notification", failure); }
+        MAIN.postDelayed(() -> { if (session.equals(launching)) launching = ""; }, 5000);
     }
 
     private static Screen currentScreen() {
@@ -274,7 +328,7 @@ public final class OShareReceiveBridge {
             NotificationChannel channel = new NotificationChannel(CHANNEL, "AirDrop 接收", NotificationManager.IMPORTANCE_HIGH);
             channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
             notifications.createNotificationChannel(channel);
-            PendingIntent open = PendingIntent.getActivity(app, task.notification, intent(task),
+            PendingIntent open = PendingIntent.getActivity(app, task.notification, intent(task).putExtra(EXTRA_DETAILS, true),
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             Notification.Builder builder = new Notification.Builder(app, CHANNEL)
                     .setSmallIcon(app.getApplicationInfo().icon != 0 ? app.getApplicationInfo().icon : android.R.drawable.stat_sys_download)
@@ -376,6 +430,7 @@ public final class OShareReceiveBridge {
         String session, phase = "";
         Dialog dialog;
         Intent nativeReplacement;
+        boolean manual;
         Screen(Activity activity, String session) { this.activity = activity; this.session = session; }
         void dismiss() { if (dialog != null) { dialog.dismiss(); dialog = null; } }
         void render() {
@@ -421,7 +476,10 @@ public final class OShareReceiveBridge {
                         command("cancel_incoming", task); phase = ""; MAIN.post(this::render);
                     });
                 } else {
-                    roles.positive.invoke(builder, "完成", (android.content.DialogInterface.OnClickListener) (d, w) -> activity.finish());
+                    roles.positive.invoke(builder, "完成", (android.content.DialogInterface.OnClickListener) (d, w) -> {
+                        if (nativePresenter != null) nativePresenter.dismiss(task.session);
+                        activity.finish();
+                    });
                     if (task.json.optBoolean("retryable") && !task.json.optBoolean("published") && "failed".equals(task.phase())) {
                         roles.negative.invoke(builder, "重试保存", (android.content.DialogInterface.OnClickListener) (d, w) -> {
                             command("retry_publish", task); phase = ""; MAIN.post(this::render);

@@ -141,7 +141,15 @@ Mosey 的下载目录参数是公共 Downloads 下的目录名。本桥接使用
 
 `ui-lifecycle.sh` 同时管理发送界面和后台接收需求。从 1.0.11 起，后台接收由模块与共存开关控制，独立于 oshare_state 和原生时限。OShare 宿主通过模块拥有的前台服务代理保持运行；撤销新邀请不释放忙碌的接收宿主，确认空闲后才释放代理。相关主机回归位于 `tests/test_receive_lifecycle.py`；目前真机已验证 Mac 发送文本文件、接收确认、保存及 SHA256 一致，其他场景仍待验证。
 
-### 3.5 AirDrop 名称
+### 3.5 原生 Seedling 接收展示（1.0.13）
+
+接收宿主异步解析独立 Seedling 能力，读取手机原始签名 UPK 的 index 页面默认数据和动作契约。`OShareNativeReceivePresenter` 将现有接收快照映射为原生卡片数据，串行后台调用 SDK START / update / END，真实卡片版本与实例创建确认后接管进度呈现，失败保留原弹窗和通知。
+
+原生 progress widget 的 `cancel` 带 instanceId，可映射到当前阶段的取消或查看。每次交互意义切换轮换实例，退休实例仍被识别并消耗，避免动作落入原协议单例。现有通知保留为卡片关联的底层通知，交由 Seedling 的 notificationIdList 协调呈现；完成后继续提供会话文件入口。
+
+基线原始确认按钮没有实例标识，因此隐藏这些原生按钮，邀请确认保留现有安全弹窗。原生接收控制器不参与 AirDrop 传输；模板不改写、不绕过签名。1.0.14 已按用户授权安装并重启作用域，用户截图确认胶囊可用；未运行自动传输测试。见 [实现范围](OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。
+
+### 3.6 AirDrop 名称
 
 WebUI 的 `name-set <UTF-8 hex>` / `name-reset` 独立于无线参数修改，不要求关闭接收会话。后端校验 UTF-8、控制字符和 64 字符上限，将十六进制值写入 Settings.Global 的 `opairshare_airdrop_name_hex`，状态返回当前生效配置、自定义值和默认属性值。输入从不作为 shell 源码解释。
 
