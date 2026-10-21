@@ -532,7 +532,7 @@ public final class OShareReceiveBridge {
                     if (i < 3) text.append("\n").append(file.optString("name", "文件"));
                 }
                 if (files.length() > 3) text.append("\n…");
-                text.append("\n").append(known ? android.text.format.Formatter.formatShortFileSize(app, size) : "大小未知");
+                if (known) text.append("\n").append(android.text.format.Formatter.formatShortFileSize(app, size));
             } else text.append("\n文件信息未知");
             String message = json.optString("message");
             if (!message.isEmpty()) text.append("\n").append(message);
