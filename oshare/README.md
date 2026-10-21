@@ -68,4 +68,4 @@ sh tests/run-receive-dexkit-android.sh /absolute/path/to/OShare.apk baseline
 
 `OShareNativeReceivePresenter` 按会话和交互阶段分配卡片实例，使用原生 SDK 发送 START / 更新 / END。只有系统返回与本机资源版本一致的卡片并确认创建后才收起自动进度弹窗；显式打开的详情保留。卡片实例对应的旧阶段动作会被消耗，未标记的 OShare 卡片沿用原路径。
 
-原始接收确认按钮缺少实例标识，继续使用现有邀请弹窗；完成文件入口保留会话 URI。SDK 初始化与调用异步执行，避免阻塞原接收握手和主线程。1.0.14 已按授权安装并重启作用域，由用户确认胶囊可用；未运行自动传输测试。详细范围见 [实现说明](../docs/OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。
+原始接收确认按钮缺少实例标识，继续使用现有邀请弹窗；完成文件入口保留会话 URI。SDK 初始化与调用异步执行，避免阻塞原接收握手和主线程。详细范围见 [实现说明](../docs/OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。

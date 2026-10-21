@@ -147,7 +147,7 @@ Mosey 的下载目录参数是公共 Downloads 下的目录名。本桥接使用
 
 原生 progress widget 的 `cancel` 带 instanceId，可映射到当前阶段的取消或查看。每次交互意义切换轮换实例，退休实例仍被识别并消耗，避免动作落入原协议单例。现有通知保留为卡片关联的底层通知，交由 Seedling 的 notificationIdList 协调呈现；完成后继续提供会话文件入口。
 
-基线原始确认按钮没有实例标识，因此隐藏这些原生按钮，邀请确认保留现有安全弹窗。原生接收控制器不参与 AirDrop 传输；模板不改写、不绕过签名。1.0.14 已按用户授权安装并重启作用域，用户截图确认胶囊可用；未运行自动传输测试。见 [实现范围](OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。
+基线原始确认按钮没有实例标识，因此隐藏这些原生按钮，邀请确认保留现有安全弹窗。原生接收控制器不参与 AirDrop 传输；模板不改写、不绕过签名。见 [实现范围](OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。
 
 ### 3.6 AirDrop 名称
 

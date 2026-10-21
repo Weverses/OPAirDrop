@@ -87,7 +87,7 @@ sh oshare/tests/run.sh
 
 接收展示接入 OShare 原生 Seedling SDK 和手机自带 UPK 模板，在支持流体云的系统上显示状态栏胶囊、实况进度及完成动画。进度环可以取消当前接收或查看邀请；原生卡片尚未显示或不可用时保留现有通知。
 
-接收确认与文件打开继续使用带会话标识的弹窗：当前原生模板的接受／拒绝按钮没有任务实例参数。该版本保留模板及签名，不运行原互传协议控制器。1.0.14 已由用户在 PJZ110 确认胶囊可用，其他兼容性场景仍待验证，见 [接入说明](docs/OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。
+接收确认与文件打开继续使用带会话标识的弹窗：当前原生模板的接受／拒绝按钮没有任务实例参数。该版本保留模板及签名，不运行原互传协议控制器。支持条件及回退行为见 [接入说明](docs/OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。
 
 ### AirDrop 显示名称（1.0.6）
 
@@ -179,4 +179,4 @@ OPAirDrop 是独立社区项目，与 **Google、Apple、Oplus（包括 OPPO、O
 
 文中涉及的品牌、产品名称和商标归各自权利人所有，用于说明兼容对象、技术来源和运行环境。项目代码的开源许可与这些品牌、产品及商标的权属分别适用。
 
-源码提取与迁移记录位于 `docs/migration.json`，本地构建和回归记录位于 `docs/verification.json`。
+源码提取与迁移记录位于 `docs/migration.json`。

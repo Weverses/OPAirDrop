@@ -21,3 +21,12 @@ local.properties
 *.dex
 *.class
 *.log
+
+# Local investigation notes, plans and verification records
+/docs/*DIAGNOSIS*.md
+/docs/*-PLAN.md
+/docs/*-VERIFICATION.md
+/docs/*-ANALYSIS.md
+/docs/verification.json
+/docs/OSHARE-DEXKIT.md
+/docs/OSHARE-RECEIVE-LIFECYCLE.md
