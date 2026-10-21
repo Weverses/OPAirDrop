@@ -1,7 +1,7 @@
 id=opairshare
 name=OPAirDrop
-version=1.0.15
-versionCode=10015
+version=1.0.16
+versionCode=10016
 author=TimelessU
 description=为一加 13 开启 AirDrop，需要开启 Google 服务使用
 updateJson=https://github.com/Weverses/OPAirDrop/releases/latest/download/update.json

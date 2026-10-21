@@ -4,7 +4,7 @@ ui_print "- OPAirDrop v$(sed -n 's/^version=//p' "$MODPATH/module.prop")：为�
 [ "$(getprop ro.build.version.sdk)" = 37 ] || abort 'SDK37 required'
 [ "$(uname -r)" = '6.6.118-android15-8-g9bc34d5b0c79-abogki537459655-4k' ] || abort 'Kernel changed; ABI revalidation required'
 [ "${KSU:-false}" = true ] || [ -x /data/adb/ksud ] || abort 'KernelSU required'
-[ -e /data/adb/metamodule ] || abort 'Existing Magic Mount metamodule required'
+[ -e /data/adb/metamodule ] || abort 'KernelSU metamodule required'
 sh "$MODPATH/bin/verify.sh" "$MODPATH" >/dev/null || abort 'Payload integrity check failed'
 # Replacement must not merge obsolete split APKs from the earlier module.
 REPLACE="/system/system_ext/priv-app/MoseyApp"

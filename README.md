@@ -25,7 +25,7 @@
 | WLAN 平台 | Qualcomm `sun` / `peach-v2` |
 | AWDL | 信道 149，5745 MHz，20 MHz 带宽 |
 | 共存 STA 频率 | 5200 MHz（信道 40）、5745 MHz（信道 149） |
-| 模块环境 | KernelSU + Magic Mount metamodule |
+| 模块环境 | KernelSU + 元模块（不限定具体实现） |
 | OShare 桥接 | LSPosed，作用域为 OShare 与 Mosey |
 
 设备型号、SDK 和内核匹配规则位于 `module/customize.sh` 与 `module/bin/control.sh`。其他设备的适配从内核源码、驱动 ABI 和系统分享服务版本开始。
