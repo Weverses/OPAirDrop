@@ -45,6 +45,9 @@ public final class BridgeMessenger {
     private static boolean sinkInstalled;
     private static boolean receiverInstalled;
     private static final String CONNECT = "com.tlsu.oshareairdrop.BRIDGE_CONNECT";
+    static final String READY = "com.tlsu.oshareairdrop.BRIDGE_READY";
+    private static Context hostContext;
+    private static volatile Runnable receiveClientReady;
     private static final java.util.Map<IBinder, Integer> CLIENT_UIDS = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.Set<IBinder> RECEIVE_CLIENTS = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static volatile Messenger server;
@@ -80,7 +83,37 @@ public final class BridgeMessenger {
             }
         }, new IntentFilter(CONNECT), Context.RECEIVER_EXPORTED);
         receiverInstalled = true;
+        hostContext = context;
+        StartupTrace.mark("BRIDGE_RECEIVER_READY");
+        announceReady();
     }
+
+    /** A hint only: the command Binder still comes through the UID-checked handshake. */
+    static void observeReadiness(Context context, Runnable onReady) {
+        context.registerReceiver(new BroadcastReceiver() {
+            @Override public void onReceive(Context host, Intent intent) {
+                if (!trustedReadyUid(context, getSentFromUid())) return;
+                onReady.run();
+            }
+        }, new IntentFilter(READY), Context.RECEIVER_EXPORTED);
+    }
+
+    static boolean trustedReadyUid(Context context, int uid) {
+        if (uid < 0 || uid / 100000 != Process.myUid() / 100000) return false;
+        try { return uid == context.getPackageManager().getPackageUid(Entry.HOST, 0); }
+        catch (Exception failure) { return false; }
+    }
+
+    private static void announceReady() {
+        Context context = hostContext;
+        if (context == null) return;
+        try {
+            context.sendBroadcast(new Intent(READY).setPackage("com.coloros.oshare"), null,
+                    BroadcastOptions.makeBasic().setShareIdentityEnabled(true).toBundle());
+        } catch (RuntimeException failure) { Log.w(TAG, "bridge ready hint failed", failure); }
+    }
+
+    static void onReceiveClientReady(Runnable listener) { receiveClientReady = listener; }
 
     public static void connect(Context context, Messenger client) {
         Intent intent = new Intent(CONNECT).setPackage(Entry.HOST).putExtra(EXTRA_CLIENT, client);
@@ -138,6 +171,7 @@ public final class BridgeMessenger {
             clientMessenger.send(Message.obtain(null, MSG_ATTACHED));
         } catch (RemoteException failure) { remove(clientMessenger); return; }
         Log.i(TAG, "bridge client admitted uid=" + uid + " providerReady=" + ProviderHolder.ready());
+        StartupTrace.mark("CLIENT_ATTACHED");
         if (ProviderHolder.ready()) sendHello(clientMessenger);
     }
 
@@ -152,7 +186,9 @@ public final class BridgeMessenger {
     }
 
     public static void providerReady() {
+        StartupTrace.mark("PROVIDER_READY");
         sendHello();
+        announceReady();
     }
 
     private static void sendHello() {
@@ -164,6 +200,7 @@ public final class BridgeMessenger {
             Message message = Message.obtain(null, MSG_HELLO);
             message.replyTo = server;
             target.send(message);
+            StartupTrace.mark("CLIENT_HELLO");
             Log.i(TAG, "bridge hello sent");
         } catch (Throwable t) {
             Log.w(TAG, "bridge hello failed", t);
@@ -227,7 +264,10 @@ public final class BridgeMessenger {
                     if (!oshareUid(uid)) throw new SecurityException("Receive UI must run in OShare");
                     if (reply == null || CLIENT_UIDS.getOrDefault(reply.getBinder(), -1) != uid)
                         throw new SecurityException("Receive UI must register its callback");
-                    RECEIVE_CLIENTS.add(reply.getBinder());
+                    if (RECEIVE_CLIENTS.add(reply.getBinder())) {
+                        StartupTrace.mark("RECEIVE_CLIENT_ACK");
+                        if (receiveClientReady != null) receiveClientReady.run();
+                    }
                     break;
                 case "receive_snapshot":
                     IncomingReceiver.snapshot();

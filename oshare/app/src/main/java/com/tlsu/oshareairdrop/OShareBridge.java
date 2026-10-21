@@ -111,7 +111,8 @@ public final class OShareBridge {
                 }
                 activity = new WeakReference<>(current);
                 OShareAppearance.renameSection(current);
-                MAIN.postDelayed(() -> connect(current), 1200);
+                StartupTrace.mark("SHARE_PAGE_RESUMED");
+                MAIN.post(() -> connect(current));
                 return result;
             }));
             for (String role : new String[]{"activity.update", "activity.list", "activity.panel"}) {
@@ -163,6 +164,7 @@ public final class OShareBridge {
     private static void connect(Activity current) {
         if (!isCurrentActivity(current)) return;
         if (server != null && server.getBinder().isBinderAlive()) {
+            StartupTrace.mark("SHARE_WARM_DISCOVERY_REQUEST");
             command("discover_start", null);
             return;
         }
@@ -170,7 +172,12 @@ public final class OShareBridge {
         server = null;
         connecting = true;
         bridgeAttached = false;
-        boot(current, ++connectionGeneration, 0);
+        int generation = ++connectionGeneration;
+        // A resident provider accepts broadcasts without opening another
+        // Activity. Keep the original boot path as a bounded cold fallback.
+        try { BridgeMessenger.connect(current, CLIENT); }
+        catch (Throwable failure) { Log.w(TAG, "warm bridge admission failed", failure); }
+        MAIN.postDelayed(() -> boot(current, generation, 0), 300);
     }
 
     private static boolean pending(Activity current, int generation) {
@@ -179,6 +186,10 @@ public final class OShareBridge {
 
     private static void boot(Activity current, int generation, int attempt) {
         if (!pending(current, generation)) return;
+        if (bridgeAttached) {
+            MAIN.postDelayed(() -> checkConnection(current, generation, 0), 2000);
+            return;
+        }
         try {
             BridgeMessenger.boot(current, CLIENT);
             Log.i(TAG, "bridge boot requested generation=" + generation);
@@ -225,7 +236,7 @@ public final class OShareBridge {
         try { refresh(); } catch (Throwable failure) { Log.w(TAG, "disconnect refresh failed", failure); }
         if (interrupted) toast("AirDrop 服务连接中断，请重新发送文件");
         Activity current = activity.get();
-        if (isCurrentActivity(current)) MAIN.postDelayed(() -> connect(current), 1200);
+        if (isCurrentActivity(current)) MAIN.post(() -> connect(current));
     }
 
     private static boolean receive(Message message) {
@@ -236,6 +247,7 @@ public final class OShareBridge {
         if (message.what == BridgeMessenger.MSG_HELLO) {
             if (message.replyTo == null || !isCurrentActivity(activity.get())) return true;
             boolean reconnected = server == null || !server.getBinder().equals(message.replyTo.getBinder());
+            if (!reconnected && !connecting) return true;
             if (reconnected) {
                 if (server != null && serverDeath != null) server.getBinder().unlinkToDeath(serverDeath, 0);
                 Messenger connected = message.replyTo;
@@ -274,6 +286,7 @@ public final class OShareBridge {
                     state(device, AirDropPresentation.DISCOVERED_STATE);
                 }
                 DEVICES.put(key, device);
+                if (isCurrentActivity(activity.get())) StartupTrace.mark("SHARE_TARGET_UPDATED");
                 refresh();
             } else if ("target_lost".equals(type)) {
                 if (!ACTIVE.contains(key)) DEVICES.remove(key);

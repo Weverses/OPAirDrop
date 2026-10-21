@@ -4,6 +4,7 @@ set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
 AUTH="$STATE/callback-auth"
+startup_trace AUTH_BEGIN
 mkdir -p "$AUTH"
 if [ -e "$STATE/callback-off" ]; then
     /system/bin/sh "$MODDIR/bin/app-check.sh" original
@@ -27,6 +28,7 @@ while [ "$n" -lt 20 ]; do
     fi
     sleep 1;n=$((n+1))
 done
+[ "$registered" != 1 ] || startup_trace AUTH_REGISTERED
 /system/bin/sh "$MODDIR/bin/provider.sh" release
 reply=$(framework timeout 15 service call "$SERVICE" 2 i32 1 i32 4)
 printf '%s\n' "$reply" > "$AUTH/native-stop.txt"
@@ -38,4 +40,5 @@ fi
 gms_pid=$(pidof com.google.android.gms)
 printf '%s\n' "$gms_pid" > "$AUTH/gms-pid"
 boot_id > "$AUTH/boot"
+startup_trace PATCH_AUTH_READY
 echo "CALLBACK_AUTH_PRIMED gms_pid=$gms_pid"

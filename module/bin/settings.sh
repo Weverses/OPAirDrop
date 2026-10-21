@@ -153,7 +153,7 @@ case "${1:-status}" in
             echo
             echo '[status]'
             status
-            for name in boot-start.log supervisor.log speed-history/worker.log;do
+            for name in startup-trace.log boot-start.log supervisor.log speed-history/worker.log;do
                 printf '\n[%s]\n' "$name"
                 [ ! -r "$STATE/$name" ] || tail -n 120 "$STATE/$name"
             done
@@ -163,7 +163,7 @@ case "${1:-status}" in
         ;;
     logs)
         [ "$#" = 1 ] || exit 2
-        for name in boot-start.log supervisor.log;do
+        for name in startup-trace.log boot-start.log supervisor.log;do
             printf '\n[%s]\n' "$name"
             [ ! -r "$STATE/$name" ] || tail -n 45 "$STATE/$name"
         done

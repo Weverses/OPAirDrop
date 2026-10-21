@@ -43,6 +43,11 @@ public final class OShareReceiveBridge {
     private static Entry module;
     private static OShareReceiveResolver.Roles roles;
     private static Messenger server;
+    private static android.os.IBinder.DeathRecipient serverDeath;
+    private static final BridgeReconnect RECONNECT = new BridgeReconnect(new BridgeReconnect.Scheduler() {
+        public void remove(Runnable task) { MAIN.removeCallbacks(task); }
+        public void post(Runnable task, long delay) { MAIN.postDelayed(task, delay); }
+    }, () -> server != null && server.getBinder().isBinderAlive(), OShareReceiveBridge::connectBackground);
     private static WeakReference<Activity> visible = new WeakReference<>(null);
     private static boolean installed;
     private static String launching = "";
@@ -132,8 +137,10 @@ public final class OShareReceiveBridge {
                 if (screen == null) return chain.proceed();
                 screen.render(); return null;
             }));
+            BridgeMessenger.observeReadiness(app, RECONNECT::wake);
             installed = true;
-            MAIN.post(OShareReceiveBridge::maintainConnection);
+            StartupTrace.mark("RECEIVE_HOST_READY");
+            RECONNECT.wake();
             owner.log(Log.INFO, Entry.TAG, "OShare isolated receive UI hooks installed");
         } catch (Throwable failure) {
             for (HookHandle hook : HOOKS) try { hook.unhook(); } catch (Throwable ignored) {}
@@ -147,25 +154,29 @@ public final class OShareReceiveBridge {
                 && !intent.getStringExtra(EXTRA_SESSION).isEmpty();
     }
 
-    private static void maintainConnection() {
+    private static void connectBackground() {
         if (!installed) return;
         if (server == null || !server.getBinder().isBinderAlive()) {
             disconnected(server);
             try { BridgeMessenger.connect(app, CLIENT); }
             catch (Throwable failure) { log("receive background connection failed", failure); }
         }
-        MAIN.postDelayed(OShareReceiveBridge::maintainConnection, server == null ? 5000 : 30000);
     }
 
     private static boolean receive(Message message) {
         if (message.what == BridgeMessenger.MSG_HELLO && message.replyTo != null) {
             Messenger connected = message.replyTo;
+            if (server != null && server.getBinder().equals(connected.getBinder()) && server.getBinder().isBinderAlive())
+                return true;
             if (server != null && !server.getBinder().equals(connected.getBinder())) disconnected(server);
             server = connected;
-            try { connected.getBinder().linkToDeath(() -> MAIN.post(() -> disconnected(connected)), 0); }
+            serverDeath = () -> MAIN.post(() -> disconnected(connected));
+            try { connected.getBinder().linkToDeath(serverDeath, 0); }
             catch (Throwable ignored) { disconnected(connected); return true; }
+            StartupTrace.mark("RECEIVE_HOST_CONNECTED");
             command("receive_ui_ready", null);
             command("receive_snapshot", null);
+            RECONNECT.connected();
         } else if (message.what == BridgeMessenger.MSG_EVENT) {
             try { onEvent(new JSONObject(message.getData().getString(BridgeMessenger.EXTRA_JSON, "{}"))); }
             catch (Exception failure) { log("invalid receive event", failure); }
@@ -175,7 +186,11 @@ public final class OShareReceiveBridge {
 
     private static void disconnected(Messenger expected) {
         if (server != null && expected != null && !server.getBinder().equals(expected.getBinder())) return;
+        if (server != null && serverDeath != null) try { server.getBinder().unlinkToDeath(serverDeath, 0); }
+        catch (java.util.NoSuchElementException ignored) {}
         server = null;
+        serverDeath = null;
+        if (expected != null) RECONNECT.lost();
         for (Task task : new ArrayList<>(TASKS.values())) {
             if (task.terminal()) continue;
             SUBMITTED.remove(task.session);

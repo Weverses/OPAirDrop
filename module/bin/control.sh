@@ -46,7 +46,8 @@ pause_wifi_hal() {
     /system/bin/stop vendor.wifi_hal_legacy
     n=0
     while [ "$(getprop init.svc.vendor.wifi_hal_legacy)" != stopped ] && [ "$n" -lt 10 ]; do sleep 1;n=$((n+1));done
-    [ "$(getprop init.svc.vendor.wifi_hal_legacy)" = stopped ]
+    [ "$(getprop init.svc.vendor.wifi_hal_legacy)" = stopped ] || return 4
+    startup_trace HAL_STOPPED
 }
 resume_wifi_hal() {
     if same_boot "$STATE/hal-paused"; then
@@ -55,6 +56,7 @@ resume_wifi_hal() {
         while [ "$(getprop init.svc.vendor.wifi_hal_legacy)" != running ] && [ "$n" -lt 10 ]; do sleep 1;n=$((n+1));done
         [ "$(getprop init.svc.vendor.wifi_hal_legacy)" = running ] || return 4
         rm -f "$STATE/hal-paused"
+        startup_trace HAL_RUNNING
     fi
 }
 restore_session_wifi() {
@@ -106,7 +108,7 @@ start_native() {
     boot_id > "$STATE/server-boot"
     n=0
     while [ "$n" -lt 15 ]; do
-        if framework service check "$SERVICE" | grep -q ': found'; then return 0; fi
+        if framework service check "$SERVICE" | grep -q ': found'; then startup_trace NATIVE_BINDER_READY; return 0; fi
         kill -0 "$server" || return 4
         sleep 1; n=$((n+1))
     done
@@ -265,8 +267,10 @@ case "${1:-status}" in
         trap 'exit 130' INT
         trap 'exit 143' TERM
         framework am force-stop --user 0 "$PKG"
+        startup_trace WIFI_STOP_REQUEST
         framework svc wifi disable
         wifi_wait 0
+        startup_trace WIFI_STOP_CONFIRMED
         sleep 6
         pause_wifi_hal
         rmmod qca_cld3_peach_v2
@@ -287,6 +291,7 @@ case "${1:-status}" in
         insmod "$MODDIR/payload/kernel/mac80211.ko"
         insmod "$MODDIR/payload/kernel/wonder.ko" physical_name=wondertap0 virtual_name=wonder0
         kernel_matches || exit 3
+        startup_trace DRIVER_SWAP_DONE
         # Finish loading the entire stack before allowing framework association.
         resume_wifi_hal
         wifi_restore "$(cat "$STATE/wifi-before")"

@@ -131,6 +131,7 @@ while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&
             # needs the original helper, whose restore may reconnect Wi-Fi.
             if [ ! -d "$STATE/coex-session" ]; then wifi_session capture || exit 8; fi
             boot_id > "$STATE/ui-session"
+            startup_trace COEX_READY
             exec 6>&-
             if ! /system/bin/timeout -k 2 35 /system/bin/sh "$MODDIR/bin/provider.sh" ensure 8>&-; then
                 provider_ready=0
@@ -163,8 +164,11 @@ while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&
         fi
         if [ "$receive_eligible" = 1 ] && [ "$provider_ready" = 1 ] && [ "$receive_samples" -ge 10 ];then
             if /system/bin/sh "$MODDIR/bin/receive-session.sh" ensure-ui 8>&-;then
+                [ "$receive_published" = 1 ] || startup_trace RECEIVE_HOST_READY
                 # Recheck module/coexistence ownership before opening admission.
+                receive_previous=$receive_published
                 receive_published=$(/system/bin/sh "$MODDIR/bin/receive-session.sh" ready 8>&-)
+                if [ "$receive_previous" != 1 ] && [ "$receive_published" = 1 ];then startup_trace RECEIVE_GATE_OPEN;fi
             else
                 /system/bin/sh "$MODDIR/bin/receive-session.sh" clear 8>&-
                 receive_published=0

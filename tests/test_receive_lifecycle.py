@@ -121,6 +121,7 @@ SERVICE=test.native
 boot_id() {{ echo boot; }}
 same_boot() {{ [ -r "$1" ] && [ "$(cat "$1")" = boot ]; }}
 init_state() {{ :; }}
+startup_trace() {{ :; }}
 kernel_matches() {{ return 0; }}
 pid_is() {{ return 0; }}
 framework() {{ "$@"; }}

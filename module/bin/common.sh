@@ -18,6 +18,12 @@ pid_is() {
     timeout 2 grep -aFq -- "$2" "/proc/$1/cmdline" 2>/dev/null
 }
 init_state() { mkdir -p "$STATE"; chmod 700 "$STATE"; }
+startup_trace() {
+    # Same monotonic time base as Android elapsedRealtime, independent of the
+    # wall clock being corrected during boot. Milestones contain no user data.
+    trace_ms=$(awk '{printf "%.0f",$1*1000}' /proc/uptime) || return 0
+    printf 'STARTUP stage=%s elapsed_ms=%s\n' "$1" "$trace_ms" >> "$STATE/startup-trace.log" || true
+}
 framework() {
     # KernelSU standalone ash prefers BusyBox applets even with Android PATH.
     # Pin framework tools; Binder commands still receive pipe FDs via capture.
@@ -43,9 +49,11 @@ framework() {
 wifi_restore() {
     case "$1" in 1) wifi_action=enable;; 0) wifi_action=disable;; *) return 3;; esac
     echo "WIFI_RESTORE_REQUEST desired=$1"
+    startup_trace WIFI_RESTORE_REQUEST
     framework timeout 5 svc wifi "$wifi_action" || return 3
     wifi_wait "$1" || return 3
     echo "WIFI_RESTORE_CONFIRMED desired=$1"
+    startup_trace WIFI_RESTORE_CONFIRMED
 }
 wifi_state() {
     wifi_text=$(framework timeout 5 cmd wifi status) || return 3

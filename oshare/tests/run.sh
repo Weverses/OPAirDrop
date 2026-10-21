@@ -17,5 +17,8 @@ java -cp "$work" DiscoveryChannelsTest
 javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/DiscoverySession.java" "$root/tests/DiscoverySessionTest.java"
 java -cp "$work" com.tlsu.oshareairdrop.DiscoverySessionTest
 
+javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/BridgeReconnect.java" "$root/tests/BridgeReconnectTest.java"
+java -cp "$work" com.tlsu.oshareairdrop.BridgeReconnectTest
+
 javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/OShareApkFiles.java" "$root/tests/OShareApkFilesTest.java"
 java -cp "$work" com.tlsu.oshareairdrop.OShareApkFilesTest

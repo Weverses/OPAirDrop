@@ -41,6 +41,9 @@ else:raise RuntimeError((name,a))
             (self.tools / name).symlink_to(dispatch)
         code = (ROOT / 'module/bin/common.sh').read_text()
         self.common = self.base / 'common.sh'
+        (self.base/'uptime').write_text('42.125 10.00\n')
+        code = code.replace('STATE=/data/adb/opairshare', "STATE='" + str(self.base) + "'")
+        code = code.replace('/proc/uptime', str(self.base/'uptime'))
         self.common.write_text(code.replace('/system/bin/', str(self.tools) + '/'))
         self.env = dict(os.environ, WIFI_TEST_BASE=str(self.base),
                         PATH=str(self.tools) + os.pathsep + os.environ['PATH'])
@@ -80,6 +83,9 @@ else:raise RuntimeError((name,a))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('WIFI_RESTORE_CONFIRMED desired=1', result.stdout)
         self.assertEqual((self.base / 'requests').read_text(), 'wifi enable\n')
+        trace=(self.base/'startup-trace.log').read_text().splitlines()
+        self.assertEqual(trace, ['STARTUP stage=WIFI_RESTORE_REQUEST elapsed_ms=42125',
+                                 'STARTUP stage=WIFI_RESTORE_CONFIRMED elapsed_ms=42125'])
 
     def test_restore_off_waits_for_disabled(self):
         result = self.run_wifi('wifi_restore', '0', runtime=('1', '0'))

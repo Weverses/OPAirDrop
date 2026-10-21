@@ -79,6 +79,7 @@ final class ReceiveController {
                 return result;
             }));
             installed = true;
+            BridgeMessenger.onReceiveClientReady(ReceiveController::queueTick);
             MAIN.post(new Runnable() {
                 @Override public void run() { queueTick(); MAIN.postDelayed(this, 1000); }
             });
@@ -137,6 +138,7 @@ final class ReceiveController {
                     ProviderApi.startOwnedAdvertising(desiredName);
                 });
                 advertisedName = desiredName;
+                StartupTrace.mark("RECEIVE_ADVERTISING");
                 Log.i(Entry.TAG, "OSHARE_RECEIVE_ADVERTISING");
             } catch (Throwable failure) {
                 Log.e(Entry.TAG, "receive start failed", failure);
