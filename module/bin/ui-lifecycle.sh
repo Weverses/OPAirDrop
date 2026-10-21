@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # Keep the driver/native server resident; share provider ownership between UI
-# and OShare's Contacts (2) / Everyone (1) reception windows.
+# and continuous module-owned background reception.
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
@@ -37,7 +37,7 @@ foreground_state() {
     fi
     resumed=$(grep -E 'topResumedActivity=|mResumedActivity:|ResumedActivity:' "$activities_file" || true)
     if [ -z "$resumed" ];then echo unknown;return;fi
-    if printf '%s\n' "$resumed" | grep -Eq '(com\.google\.android\.gms/[^ ]*nearby\.sharing\.|com\.coloros\.oshare/(\.ui\.ShareActivity|com\.(oplus|coloros)\.oshare\.ui\.ShareActivity)|com\.tlsu\.oshareairdrop/\.MainActivity)'; then
+    if printf '%s\n' "$resumed" | grep -Eq '(com\.google\.android\.gms/[^ ]*nearby\.sharing\.|com\.coloros\.oshare/(\.ui\.ShareActivity|com\.(oplus|coloros)\.oshare\.ui\.ShareActivity))'; then
         echo open;return
     fi
     if [ -e "$STATE/ui-session" ] &&
@@ -69,6 +69,7 @@ close_session() {
     grep -q 'used=0 armed=0 pending=0 active=0 fault=0' "$P/opairshare_awdl_rx_mac_filter" || return 7
     if [ -e "$STATE/session-wifi" ]; then wifi_session restore || return 8; fi
     /system/bin/sh "$MODDIR/bin/coex-session.sh" restore 8>&- || return 8
+    /system/bin/sh "$MODDIR/bin/receive-session.sh" release-host 8>&- || return 8
     rm -f "$STATE/ui-session"
     echo 'UI_CLOSED_RADIO_RELEASED_DRIVER_RETAINED'
 }
@@ -162,7 +163,7 @@ while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&
         fi
         if [ "$receive_eligible" = 1 ] && [ "$provider_ready" = 1 ] && [ "$receive_samples" -ge 10 ];then
             if /system/bin/sh "$MODDIR/bin/receive-session.sh" ensure-ui 8>&-;then
-                # Recheck the native setting to close an off/timeout race.
+                # Recheck module/coexistence ownership before opening admission.
                 receive_published=$(/system/bin/sh "$MODDIR/bin/receive-session.sh" ready 8>&-)
             else
                 /system/bin/sh "$MODDIR/bin/receive-session.sh" clear 8>&-

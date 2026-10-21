@@ -126,4 +126,48 @@ framework() {{ cat '{self.base}/wifi'; }}
         self.assertFalse((self.state/'coex-session').exists())
         self.assertEqual((self.params/'passthru_awdl_allow_concurrent').read_text().strip(),'N')
 
+    def background_session(self):
+        (self.state/'ui-session').write_text('boot')
+        (self.state/'coex-session').mkdir()
+        (self.state/'coex-session/boot').write_text('boot')
+        (self.state/'receive-delegate-owned').write_text('boot')
+        (self.params/'opairshare_channel_state').write_text('busy=0 fault=0 error=0 accepting=1 vdev=3 freq=5745')
+        (self.params/'opairshare_awdl_rx_mac_filter').write_text('used=1 armed=1 pending=0 active=1 fault=0')
+        with (self.bin/'common.sh').open('a') as out:
+            out.write('''
+same_boot() { [ -r "$1" ] && [ "$(cat "$1")" = boot ]; }
+framework() {
+ case "$*" in
+  *dumpsys*)
+   if [ "${TEST_BG_SHARING:-0}" = 1 ];then echo 'topResumedActivity= com.coloros.oshare/com.oplus.oshare.ui.ShareActivity t9}'
+   else echo 'topResumedActivity= me.weishu.kernelsu/.ui.webui.WebUIActivity t4}';fi;;
+  *) cat ''' + "'" + str(self.base/'wifi') + "'" + ''';;
+ esac
+}
+''')
+
+    def test_idle_background_can_disable_coexistence_through_normal_teardown(self):
+        self.background_session()
+        self.assertEqual(json.loads(self.run_api('status').stdout)['editable'], 'on')
+        sleep=self.tools/'sleep'
+        sleep.write_text(f'''#!/bin/sh
+[ -f '{self.state}/coex-off' ] || exit 1
+rm -f '{self.state}/ui-session' '{self.state}/coex-session/boot'
+rmdir '{self.state}/coex-session'
+printf '%s' 'cookie=1 busy=0 fault=0 error=0 accepting=0 vdev=255 freq=0' > '{self.params}/opairshare_channel_state'
+printf '%s' 'used=0 armed=0 pending=0 active=0 fault=0' > '{self.params}/opairshare_awdl_rx_mac_filter'
+''');sleep.chmod(0o755)
+        result=json.loads(self.run_api('apply','off','auto','fast','on').stdout)
+        self.assertEqual((result['coexist'],result['editable']),('off','on'))
+        self.assertFalse((self.state/'ui-session').exists())
+
+    def test_busy_or_foreground_background_session_still_rejects_changes(self):
+        self.background_session()
+        for flag in ['TEST_TRANSFER_BUSY','TEST_BG_SHARING']:
+            self.env[flag]='1'
+            self.assertEqual(json.loads(self.run_api('status').stdout)['editable'],'off')
+            self.run_api('apply','off','auto','fast','on',ok=False)
+            self.assertFalse((self.state/'coex-off').exists())
+            self.env.pop(flag)
+
 if __name__=='__main__':unittest.main(verbosity=2)

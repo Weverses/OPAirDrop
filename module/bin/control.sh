@@ -18,6 +18,7 @@ lock_stack() {
 start_supervisor() {
     owner=$(cat "$STATE/supervisor.pid" 2>/dev/null || true)
     if ! pid_is "$owner" 'ui-lifecycle.sh'; then
+        printf '\nSUPERVISOR_START boot=%s time=%s\n' "$(boot_id)" "$(date '+%Y-%m-%dT%H:%M:%S%z')" >> "$STATE/supervisor.log"
         /system/bin/sh "$MODDIR/bin/ui-lifecycle.sh" >> "$STATE/supervisor.log" 2>&1 < /dev/null 9>&- &
         owner=$!
         echo "$owner" > "$STATE/supervisor.pid"
@@ -36,8 +37,8 @@ stop_supervisor() {
     owner=$(cat "$STATE/supervisor.pid" 2>/dev/null || true)
     if pid_is "$owner" 'ui-lifecycle.sh'; then kill "$owner" || true; fi
     n=0
-    while pid_live "$owner" && [ "$n" -lt 30 ]; do sleep 1; n=$((n+1)); done
-    if pid_live "$owner"; then echo 'Supervisor has not exited'; return 9; fi
+    while pid_is "$owner" 'ui-lifecycle.sh' && [ "$n" -lt 30 ]; do sleep 1; n=$((n+1)); done
+    if pid_is "$owner" 'ui-lifecycle.sh'; then echo 'Supervisor has not exited'; return 9; fi
 }
 pause_wifi_hal() {
     hal_state=$(getprop init.svc.vendor.wifi_hal_legacy)
@@ -61,6 +62,7 @@ restore_session_wifi() {
         CLASSPATH="$MODDIR/payload/native/session-wifi.jar" /system/bin/timeout -k 2 18 /system/bin/app_process /system/bin OPAirShareSessionWifi restore "$STATE/session-wifi" || return 8
     fi
     /system/bin/sh "$MODDIR/bin/coex-session.sh" restore || return 8
+    /system/bin/sh "$MODDIR/bin/receive-session.sh" release-host || return 8
     rm -f "$STATE/ui-session"
 }
 retire_old_ui_state() {
@@ -147,6 +149,7 @@ restore_owned() {
     restore_session_wifi || return 8
     if loaded wonder; then rmmod wonder || return 10; fi
     framework svc wifi disable
+    wifi_wait 0 || return 4
     sleep 6
     pause_wifi_hal || return 4
     if same_boot "$STATE/qca-swapped"; then
@@ -252,7 +255,7 @@ case "${1:-status}" in
         [ "$(module_note qca_cld3_peach_v2)" = "$STOCK_NOTE_qca_cld3_peach_v2" ] || exit 3
         [ "$(module_note mac80211)" = "$STOCK_NOTE_mac80211" ] || exit 3
         loaded cnss2 || exit 3
-        wifi_before=$(wifi_state)
+        wifi_before=$(wifi_startup_state)
         case "$wifi_before" in 0|1) ;; *) echo 'Invalid Wi-Fi state'; exit 3;; esac
         printf '%s\n' "$wifi_before" > "$STATE/wifi-before"
         boot_id > "$STATE/stack-boot"
@@ -263,6 +266,7 @@ case "${1:-status}" in
         trap 'exit 143' TERM
         framework am force-stop --user 0 "$PKG"
         framework svc wifi disable
+        wifi_wait 0
         sleep 6
         pause_wifi_hal
         rmmod qca_cld3_peach_v2
@@ -278,14 +282,14 @@ case "${1:-status}" in
             passthru_awdl_target_mac="" passthru_awdl_target_auto=1 passthru_awdl_target_enable=1 passthru_awdl_target_auth=2 \
             passthru_native_data_rx=1 passthru_awdl_backpressure=1 passthru_awdl_raw_rx=1 passthru_awdl_rate_mbps=54 \
             passthru_awdl_host_seq=1 passthru_awdl_rx_dedup=1 passthru_awdl_attempts=3 passthru_awdl_rx_auto=1 passthru_awdl_rx_rearm=1 passthru_sta_coexist=2 passthru_sta_regular_rx=1 passthru_sta_action_rx=1 passthru_pas_discovery_actions=1 $turbo_args
-        resume_wifi_hal
-        wifi_restore "$(cat "$STATE/wifi-before")"
-        sleep 6
         rmmod mac80211
         boot_id > "$STATE/mac-swapped"
         insmod "$MODDIR/payload/kernel/mac80211.ko"
         insmod "$MODDIR/payload/kernel/wonder.ko" physical_name=wondertap0 virtual_name=wonder0
         kernel_matches || exit 3
+        # Finish loading the entire stack before allowing framework association.
+        resume_wifi_hal
+        wifi_restore "$(cat "$STATE/wifi-before")"
         start_native
         activate_provider
         rm -f "$STATE/startup-incomplete"

@@ -56,7 +56,11 @@ elif name=='sleep':
  log('tick:%d ready:%s provider:%s'%(tick,(b/'ready').read_text() if (b/'ready').exists() else '?',(b/'provider').exists()))
  tick+=1;(b/'tick').write_text(str(tick))
  if tick>=len(frames):(s/'disabled').touch()
- elif frames[tick].get('kill_provider'):(b/'provider').unlink(missing_ok=True)
+ else:
+  if frames[tick].get('kill_provider'):(b/'provider').unlink(missing_ok=True)
+  if 'coex_off' in frames[tick]:
+   if frames[tick]['coex_off']:(s/'coex-off').touch()
+   else:(s/'coex-off').unlink(missing_ok=True)
 elif name=='dumpsys':
  if a[:2]==['activity','activities']:
   fg=f.get('foreground','closed')
@@ -65,11 +69,17 @@ elif name=='dumpsys':
   elif fg=='closed':print('topResumedActivity= com.android.launcher/.Launcher t2}')
  elif a[:3]==['activity','services','com.coloros.oshare']:
   if (b/'oshare').exists():print('ServiceRecord com.coloros.oshare/com.oplus.oshare.OShareServer')
+  if (b/'oshare-delegate').exists():print('ServiceRecord com.coloros.oshare isFgsDelegate=true')
  elif a[:2]==['activity','service']:
   print('ExternalSharingService state:\\nActive Transfers (0)\\nReceive provider transferring: false')
   print('OPAIRSHARE_RECEIVE busy='+str(f.get('busy',0)))
 elif name=='am':
  log('oshare:start');(b/'oshare').touch();print('Starting service: Intent { }')
+elif name=='cmd':
+ action=a[-1];log('oshare:delegate:'+action)
+ if f.get('delegate_fail'):sys.exit(1)
+ if action=='start':(b/'oshare-delegate').touch()
+ else:(b/'oshare-delegate').unlink(missing_ok=True)
 elif name=='service':print('Parcel(00000000)')
 elif name=='app_process':
  op=a[2];path=pathlib.Path(a[3]);log('wifi:'+op)
@@ -92,7 +102,7 @@ else:raise RuntimeError((name,a))
 ''')
         self.dispatch.chmod(0o755)
         for name in ['timeout', 'settings', 'setprop', 'id', 'pidof', 'flock',
-                     'sleep', 'dumpsys', 'am', 'service', 'app_process']:
+                     'sleep', 'dumpsys', 'am', 'cmd', 'service', 'app_process']:
             (self.tools / name).symlink_to(self.dispatch)
         for name in ['provider.sh', 'coex-session.sh', 'speed-history.sh']:
             # ui-lifecycle executes these with sh, so use an executable wrapper.
@@ -140,17 +150,18 @@ framework() {{ "$@"; }}
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return self.log.read_text()
 
-    def test_everyone_holds_background_coex_without_wifi_restore(self):
-        log = self.run_lifecycle([{'setting': '1'}] * 4)
+    def test_boot_with_native_receive_off_starts_background_without_activity(self):
+        log = self.run_lifecycle([{'setting': '0'}] * 4)
         self.assertIn('coex:prepare', log)
         self.assertIn('provider:ensure', log)
         self.assertIn('tick:0 ready:1 provider:True', log)
         self.assertEqual(log.count('oshare:start'), 1)
+        self.assertEqual(log.count('oshare:delegate:start'), 1)
         self.assertNotIn('wifi:', log)
         self.assertNotIn('provider:release', log)
         self.assertEqual((self.base / 'ready').read_text(), '0')
 
-    def test_contacts_holds_background_and_switching_modes_preserves_session(self):
+    def test_switching_native_modes_preserves_background_session(self):
         log = self.run_lifecycle([{'setting': '2'}, {'setting': '1'}, {'setting': '2'}] +
                                  [{'setting': '0'}] * 4)
         self.assertIn('tick:0 ready:1 provider:True', log)
@@ -158,29 +169,26 @@ framework() {{ "$@"; }}
         self.assertIn('tick:2 ready:1 provider:True', log)
         self.assertEqual(log.count('coex:prepare'), 1)
         self.assertEqual(log.count('oshare:start'), 1)
-        self.assertIn('provider:release', log)
+        self.assertNotIn('provider:release', log)
         self.assertNotIn('wifi:', log)
 
-    def test_off_errors_and_unknown_never_open_background_receiver(self):
-        for setting in ['0', 'null', '3', 'ERROR']:
-            with self.subTest(setting=setting):
-                (self.state / 'disabled').unlink(missing_ok=True)
-                self.log.write_text('')
-                log = self.run_lifecycle([{'setting': setting}] * 3)
-                self.assertNotIn('provider:ensure', log)
-                self.assertNotIn('coex:prepare', log)
-                self.assertNotIn('ready:1', log)
+    def test_native_settings_errors_do_not_gate_module_owned_reception(self):
+        log = self.run_lifecycle([{'setting': setting} for setting in ['0', 'null', '3', 'ERROR']])
+        self.assertEqual(log.count('coex:prepare'), 1)
+        for tick in range(4):
+            self.assertIn(f'tick:{tick} ready:1 provider:True', log)
 
-    def test_pending_receive_survives_visibility_off_until_idle(self):
+    def test_pending_receive_survives_coex_off_until_idle(self):
         log = self.run_lifecycle([{'setting': '2'}] +
-                                 [{'setting': '0', 'busy': 1}] * 4 +
-                                 [{'setting': '0'}] * 2)
+                                 [{'coex_off': True, 'busy': 1}] * 4 +
+                                 [{'coex_off': True}] * 2)
         lines = log.splitlines()
         release = lines.index('provider:release')
         self.assertGreater(release, lines.index('tick:4 ready:0 provider:True'))
         self.assertIn('coex:restore', log)
         self.assertNotIn('wifi:', log)
         self.assertFalse((self.state / 'ui-session').exists())
+        self.assertGreater(lines.index('oshare:delegate:stop'), lines.index('tick:4 ready:0 provider:True'))
 
     def test_legacy_mode_does_not_open_background_receive(self):
         (self.state / 'coex-off').touch()
@@ -212,7 +220,7 @@ framework() {{ "$@"; }}
         self.assertNotIn('provider:ensure', log)
         self.assertNotIn('ready:1', log)
 
-    def test_ready_rechecks_native_setting_and_current_boot(self):
+    def test_ready_requires_current_boot_independently_of_native_setting(self):
         for state in ['0', '1', '2']:
             self.frames([{'setting': state}])
             (self.state / 'ui-session').write_text('boot')
@@ -222,7 +230,32 @@ framework() {{ "$@"; }}
                 (p / 'boot').write_text(boot)
                 result = self.run_script('receive-session.sh', 'ready')
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout.strip(), '1' if state in ['1', '2'] and boot == 'boot' else '0')
+                self.assertEqual(result.stdout.strip(), '1' if boot == 'boot' else '0')
+
+    def test_disabled_removed_or_unowned_module_never_requests_receive(self):
+        self.frames([{'setting': '2'}])
+        for path in [self.state/'disabled', self.module/'disable', self.module/'remove', self.state/'coex-off']:
+            path.touch()
+            self.assertEqual(self.run_script('receive-session.sh', 'wanted').stdout.strip(), '0')
+            path.unlink()
+        (self.state/'stack-boot').write_text('old-boot')
+        self.assertEqual(self.run_script('receive-session.sh', 'wanted').stdout.strip(), '0')
+
+    def test_host_delegate_failure_keeps_receive_admission_closed(self):
+        log = self.run_lifecycle([{'delegate_fail': True}] * 3)
+        self.assertIn('oshare:delegate:start', log)
+        self.assertNotIn('ready:1', log)
+
+    def test_clearing_admission_retains_busy_host_and_release_checks_idle(self):
+        self.frames([{'busy': 1}])
+        (self.state/'receive-delegate-owned').write_text('boot')
+        (self.base/'oshare-delegate').touch()
+        self.assertEqual(self.run_script('receive-session.sh', 'clear').returncode, 0)
+        self.assertTrue((self.base/'oshare-delegate').exists())
+        self.assertEqual(self.run_script('receive-session.sh', 'release-host').returncode, 9)
+        self.frames([{'busy': 0}])
+        self.assertEqual(self.run_script('receive-session.sh', 'release-host').returncode, 0)
+        self.assertFalse((self.base/'oshare-delegate').exists())
 
     def test_pending_dump_overrides_native_idle(self):
         self.frames([{'busy': 1}])

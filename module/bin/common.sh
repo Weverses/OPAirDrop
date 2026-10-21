@@ -41,15 +41,43 @@ framework() {
     return "$fw_rc"
 }
 wifi_restore() {
-    if [ "$1" = 1 ]; then framework svc wifi enable; else framework svc wifi disable; fi
+    case "$1" in 1) wifi_action=enable;; 0) wifi_action=disable;; *) return 3;; esac
+    echo "WIFI_RESTORE_REQUEST desired=$1"
+    framework timeout 5 svc wifi "$wifi_action" || return 3
+    wifi_wait "$1" || return 3
+    echo "WIFI_RESTORE_CONFIRMED desired=$1"
 }
 wifi_state() {
-    wifi_text=$(framework cmd wifi status)
+    wifi_text=$(framework timeout 5 cmd wifi status) || return 3
     case "$wifi_text" in
         'Wifi is enabled'*) echo 1;;
         'Wifi is disabled'*) echo 0;;
         *) echo 'Cannot determine runtime Wi-Fi state' >&2; return 3;;
     esac
+}
+wifi_wait() {
+    case "$1" in 0|1) ;; *) return 3;; esac
+    wifi_attempt=0
+    while [ "$wifi_attempt" -lt 20 ];do
+        wifi_actual=$(wifi_state) || wifi_actual=unknown
+        [ "$wifi_actual" != "$1" ] || return 0
+        sleep 1;wifi_attempt=$((wifi_attempt+1))
+    done
+    echo "WIFI_STATE_TIMEOUT desired=$1 actual=$wifi_actual" >&2
+    return 3
+}
+wifi_startup_state() {
+    # At boot the framework can still report disabled while bringing up a
+    # user-enabled radio. Preserve the saved toggle before our temporary stop.
+    wifi_runtime=$(wifi_state) || return 3
+    wifi_saved=$(/system/bin/timeout 4 /system/bin/settings get global wifi_on 2>/dev/null) || wifi_saved=unknown
+    case "$wifi_saved" in
+        1|2) wifi_desired=1;;
+        0|3) wifi_desired=0;;
+        *) wifi_desired=$wifi_runtime;;
+    esac
+    echo "WIFI_STARTUP_SNAPSHOT runtime=$wifi_runtime persisted=$wifi_saved desired=$wifi_desired" >&2
+    echo "$wifi_desired"
 }
 sysext_path() {
     if [ -f "$MODDIR/system/system_ext/$1" ]; then echo "$MODDIR/system/system_ext/$1";

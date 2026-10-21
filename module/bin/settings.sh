@@ -28,6 +28,18 @@ json_string() {
       }} END {printf "\""}'
 }
 pair() { printf '"%s":' "$1";json_string "$2"; }
+background_can_close() {
+    same_boot "$STATE/ui-session" && same_boot "$STATE/coex-session/boot" &&
+        same_boot "$STATE/receive-delegate-owned" || return 1
+    [ "$(read_p opairshare_bridge_pending)" = 0 ] &&
+        read_p opairshare_channel_state | grep -q 'busy=0 fault=0 error=0 accepting=1' || return 1
+    read_p opairshare_awdl_rx_mac_filter | grep -q '^used=1 armed=1 pending=0 active=1 fault=0' || return 1
+    /system/bin/sh "$MODDIR/bin/transfer-idle.sh" >/dev/null 2>&1 || return 1
+    background_activities=$(framework timeout 4 dumpsys activity activities) || return 1
+    background_resumed=$(printf '%s\n' "$background_activities" | grep -E 'topResumedActivity=|mResumedActivity:|ResumedActivity:' || true)
+    [ -n "$background_resumed" ] || return 1
+    ! printf '%s\n' "$background_resumed" | grep -Eq '(com\.google\.android\.gms/[^ ]*nearby\.sharing\.|com\.coloros\.oshare/[^ ]*ShareActivity)'
+}
 status() {
     wifi=$(framework timeout 5 cmd wifi status 2>/dev/null || true)
     freq=$(printf '%s\n' "$wifi" | sed -n 's/.*Frequency: \([0-9][0-9]*\)MHz.*/\1/p' | head -1)
@@ -51,6 +63,8 @@ status() {
            ! printf '%s\n' "$radio" | grep -q 'accepting=0 vdev=255 freq=0' ||
            ! printf '%s\n' "$matcher" | grep -q '^used=0 armed=0 pending=0 active=0 fault=0';then editable=off;fi
     fi
+    # Permit the visible switch to close an idle background session.
+    if [ "$editable" = off ] && background_can_close;then editable=on;fi
     quickshare=not_installed;oshare=not_installed
     quick_path=$(framework timeout 4 pm path --user 0 com.google.android.mosey 2>/dev/null || true)
     oshare_path=$(framework timeout 4 pm path --user 0 com.coloros.oshare 2>/dev/null || true)
@@ -163,6 +177,21 @@ case "${1:-status}" in
         [ "$(id -u)" = 0 ] || fail '需要 KernelSU root 权限。'
         exec 9> "$STATE/stack.flock";flock -n 9 9>&9 || fail '底层正在执行其他操作，请稍后重试。'
         exec 6> "$STATE/settings.flock";flock -n 6 6>&6 || fail '发现会话正在启动，请稍后重试。'
+        if [ "$2" = off ] && [ "$(coexist)" = on ] &&
+           [ "$3:$4:$5" = "$(scope):$(profile):$(flag autostart)" ] && background_can_close;then
+            # Request normal supervisor teardown. Revert if it cannot finish;
+            # a concurrent invitation/transfer keeps the existing safety gate.
+            touch "$STATE/coex-off"
+            trap 'rm -f "$STATE/coex-off"' EXIT
+            trap 'exit 130' INT
+            trap 'exit 143' TERM
+            background_wait=0
+            while { [ -e "$STATE/ui-session" ] || [ -d "$STATE/coex-session" ]; } &&
+                  [ "$background_wait" -lt 20 ];do sleep 1;background_wait=$((background_wait+1));done
+            idle
+            trap - EXIT INT TERM
+            status;exit 0
+        fi
         idle
         [ "$2" != on ] || [ ! -e "$STATE/callback-off" ] || fail '先恢复进度/发现补丁后再开启共存。'
         old_coex=$(coexist);old_scope=$(scope);old_profile=$(profile);old_auto=$(flag autostart)
