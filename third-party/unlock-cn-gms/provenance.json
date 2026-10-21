@@ -1,0 +1,29 @@
+{
+  "component": "Unlock CN GMS",
+  "version": "v3.8",
+  "author": "fei-ke",
+  "source": "User-supplied archives",
+  "license": "No license file or license declaration included in the supplied archives",
+  "integration": "Adapted as OPAirDrop install-time XML overlays and early-boot read-only bind mounts",
+  "archives": [
+    {
+      "archive": "unlock-cn-gms-v3.8.zip",
+      "sha256": "c0a6ce8be1d461b6360ac3dd6116a7daa615d91b0ed6946c4a4ec9be850ada99",
+      "files": {
+        "module.prop": "6341d98a931df087d104d3a341d97116fca6388e702015c6e3e874c0a3342a08",
+        "META-INF/com/google/android/update-binary": "b4c882fffba5b85804f6212b1bdf9ca68437e5150dd3a50f869ef115f4af5380",
+        "META-INF/com/google/android/updater-script": "d2b8203193a083e43ad076fde01b9c7821e0aa521e1f8077b8628fb1cdb70c60",
+        "customize.sh": "33be4b486daf8fb6ced39462286dc24b5c3e76b9ad3d0ad7945b99167f82306b",
+        "README.md": "4fef3245fb279181bf02cb31b38f5afde7d7b7a329fed4272a49697e1c1d45b3"
+      }
+    },
+    {
+      "archive": "com.fei_ke.unlockcngms.zip",
+      "sha256": "1bffd5cbd4a2552ded3e607607bd1f147b32c781c2116103208805724fb0b509",
+      "files": {
+        "oplus_google_cn_gms_features.xml": "b8ca9034c66866b0ae9be3e50b1ba6a10fc94d39a424303fcf80a388c4fb0042",
+        "post-fs-data.sh": "6a580fc15bb5edbe3b3afa16d4561f5913572dc9b75ede14bd76e41fc5fb76bc"
+      }
+    }
+  ]
+}
