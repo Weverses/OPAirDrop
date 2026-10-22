@@ -8,6 +8,15 @@ public final class DiscoveryChannelsTest {
             check(DiscoveryChannels.select(mode,5745,true,fallback) == fallback);
         check(DiscoveryChannels.select("same149",5745,true,fallback).equals(List.of(149)));
         check(DiscoveryChannels.select("cross5g",5200,true,fallback).equals(List.of(149)));
+        for (int freq : new int[]{2412,2447,2484,5180,5200,5500,5745,5805,5925,5955,7115,7125}) {
+            check(DiscoveryChannels.select("auto",freq,true,fallback).equals(List.of(149)));
+            check(DiscoveryChannels.select("auto",freq,false,fallback) == fallback);
+        }
+        for (int freq : new int[]{0,2399,2485,5149,7126,9000})
+            check(DiscoveryChannels.select("auto",freq,true,fallback) == fallback);
+        check(DiscoveryChannels.select("auto",5805,true,List.of(6,44)).equals(List.of(149)));
+        check(DiscoveryChannels.select("auto",5805,true,List.of()).isEmpty());
+        check(DiscoveryChannels.select("auto",5805,true,null) == null);
         for (int freq : new int[]{2447,5180,0}) {
             check(DiscoveryChannels.select("same149",freq,true,fallback) == fallback);
             check(DiscoveryChannels.select("cross5g",freq,true,fallback) == fallback);
