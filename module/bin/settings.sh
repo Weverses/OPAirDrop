@@ -5,6 +5,9 @@ MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
 . "$MODDIR/bin/coex-wifi.sh"
 . "$MODDIR/bin/airdrop-name.sh"
+. "$MODDIR/bin/receive-directory.sh"
+. "$MODDIR/bin/webui-status.sh"
+. "$MODDIR/bin/share-mode.sh"
 init_state
 P=/sys/module/qca_cld3_peach_v2/parameters
 fail() { echo "$*" >&2;exit 8; }
@@ -15,8 +18,8 @@ profile() {
     elif [ -e "$STATE/turbo-vht" ];then echo vht
     else echo on;fi
 }
-coexist() { [ -e "$STATE/coex-off" ] && echo off || echo on; }
-scope() { [ -e "$STATE/coex-same149-only" ] && echo same149 || echo auto; }
+coexist() { echo on; }
+scope() { echo auto; }
 read_p() { if [ -r "$P/$1" ];then head -c 2048 "$P/$1";fi; }
 json_string() {
     # Data is rendered as text in the page; quote strings even for unusual SSIDs.
@@ -29,32 +32,31 @@ json_string() {
       }} END {printf "\""}'
 }
 pair() { printf '"%s":' "$1";json_string "$2"; }
-background_can_close() {
-    same_boot "$STATE/ui-session" && same_boot "$STATE/coex-session/boot" &&
-        same_boot "$STATE/receive-delegate-owned" || return 1
-    [ "$(read_p opairshare_bridge_pending)" = 0 ] &&
-        read_p opairshare_channel_state | grep -q 'busy=0 fault=0 error=0 accepting=1' || return 1
-    read_p opairshare_awdl_rx_mac_filter | grep -q '^used=1 armed=1 pending=0 active=1 fault=0' || return 1
-    /system/bin/sh "$MODDIR/bin/transfer-idle.sh" >/dev/null 2>&1 || return 1
-    background_activities=$(framework timeout 4 dumpsys activity activities) || return 1
-    background_resumed=$(printf '%s\n' "$background_activities" | grep -E 'topResumedActivity=|mResumedActivity:|ResumedActivity:' || true)
-    [ -n "$background_resumed" ] || return 1
-    ! printf '%s\n' "$background_resumed" | grep -Eq '(com\.google\.android\.gms/[^ ]*nearby\.sharing\.|com\.coloros\.oshare/[^ ]*ShareActivity)'
-}
 status() {
     coex_wifi_read || true
     wifi=$coex_wifi_text
     freq=$(printf '%s\n' "$wifi" | sed -n 's/.*Frequency: \([0-9][0-9]*\)MHz.*/\1/p' | head -1)
-    case "$freq" in 5745) channel=149;;5200) channel=40;;'') channel=unknown;;*) channel=unsupported;;esac
+    channel=$(awk -v f="${freq:-0}" 'BEGIN {
+        if (f == 2484) print 14;
+        else if (f >= 2412 && f <= 2472) printf "%d\n", (f - 2407) / 5;
+        else if (f >= 5955 && f <= 7115) printf "%d\n", (f - 5950) / 5;
+        else if (f >= 5150 && f <= 5895) printf "%d\n", (f - 5000) / 5;
+        else print "unknown";
+    }')
     connected=$(printf '%s\n' "$wifi" | sed -n 's/^Wifi is connected to //p' | head -1)
+    sta_class=${coex_wifi_class:-unknown}
+    sta_band=${coex_wifi_band:-unknown}
     coexist_active=off
-    coexist_reason=manual
+    coexist_reason=wifi_unavailable
     if coex_requested;then
         coexist_reason=$coex_wifi_reason
-        if [ -z "$coexist_reason" ];then
-            if [ -e "$STATE/coex-wifi-blocked" ] || [ -e "$STATE/coex-session/invalidated" ];then
-                coexist_reason=recovering
-            else coexist_active=on;fi
+        if [ -e "$STATE/coex-wifi-blocked" ];then
+            coexist_reason=$(cat "$STATE/coex-wifi-blocked" 2>/dev/null || echo wifi_unavailable)
+        elif [ -e "$STATE/coex-session/invalidated" ];then
+            coexist_reason=recovering
+        elif [ -n "$coexist_reason" ];then
+            :
+        else coexist_active=on;coexist_reason=
         fi
     fi
     version=$(sed -n 's/^version=//p' "$MODDIR/module.prop")
@@ -75,34 +77,43 @@ status() {
            ! printf '%s\n' "$radio" | grep -q 'accepting=0 vdev=255 freq=0' ||
            ! printf '%s\n' "$matcher" | grep -q '^used=0 armed=0 pending=0 active=0 fault=0';then editable=off;fi
     fi
-    # Permit the visible switch to close an idle background session.
-    if [ "$editable" = off ] && background_can_close;then editable=on;fi
-    quickshare=not_installed;oshare=not_installed
-    quick_path=$(framework timeout 4 pm path --user 0 com.google.android.mosey 2>/dev/null || true)
-    oshare_path=$(framework timeout 4 pm path --user 0 com.coloros.oshare 2>/dev/null || true)
-    case "$quick_path" in *package:*) quickshare=idle;;esac
-    case "$oshare_path" in *package:*) oshare=idle;;esac
-    [ -z "$(pidof com.google.android.mosey 2>/dev/null || true)" ] || quickshare=running
-    [ -z "$(pidof com.coloros.oshare 2>/dev/null || true)" ] || oshare=running
+    quickshare=$(app_state com.google.android.mosey)
+    oshare=$(app_state com.coloros.oshare)
     awdl=stopped
     if [ -r "$P/opairshare_channel_state" ] && [ -n "$(pidof mosey_server 2>/dev/null || true)" ];then awdl=running;fi
-    printf '{'
-    pair awdl "$awdl";printf ',';pair quickshare "$quickshare";printf ',';pair oshare "$oshare";printf ','
-    pair version "$version";printf ',';pair coexist "$coexist_active";printf ','
-    pair coexist_requested "$(coexist)";printf ',';pair coexist_reason "$coexist_reason";printf ','
-    pair airdrop_name "$name_effective";printf ',';pair airdrop_name_default "$name_default";printf ','
-    pair airdrop_name_custom "$name_custom";printf ','
-    pair scope "$(scope)";printf ',';pair profile "$(profile)";printf ','
-    pair autostart "$(flag autostart)";printf ',';pair session "$session";printf ','
-    pair editable "$editable";printf ',';pair ready "$ready";printf ','
-    pair frequency "${freq:-unknown}";printf ',';pair channel "$channel";printf ','
-    pair network "$connected";printf ',';pair radio "$radio";printf ','
-    pair matcher "$matcher";printf ',';pair pending "$(read_p opairshare_bridge_pending)";printf ','
-    pair phy "$(read_p passthru_awdl_phy)";printf ',';pair mcs "$(read_p passthru_awdl_mcs)";printf ','
-    pair nss "$(read_p passthru_awdl_nss)";printf ',';pair batch "$(read_p passthru_awdl_amsdu_max)";printf ','
-    pair collect "$(read_p passthru_awdl_collect_us)";printf ','
-    pair callback "$([ -e "$STATE/callback-off" ] && echo off || echo on)"
-    printf '}\n'
+    json_object \
+        share_mode "$(saved_share_mode)" share_mode_active "$(active_share_mode)" \
+        receive_directory "$(decode_name_hex "$(read_receive_directory_hex)")" \
+        awdl "$awdl" \
+        quickshare "$quickshare" \
+        oshare "$oshare" \
+        version "$version" \
+        coexist "$coexist_active" \
+        coexist_requested "$(coexist)" \
+        coexist_reason "$coexist_reason" \
+        airdrop_name "$name_effective" \
+        airdrop_name_default "$name_default" \
+        airdrop_name_custom "$name_custom" \
+        scope "$(scope)" \
+        profile "$(profile)" \
+        autostart "$(flag autostart)" \
+        session "$session" \
+        editable "$editable" \
+        ready "$ready" \
+        frequency "${freq:-unknown}" \
+        channel "$channel" \
+        sta_class "$sta_class" \
+        sta_band "$sta_band" \
+        network "$connected" \
+        radio "$radio" \
+        matcher "$matcher" \
+        pending "$(read_p opairshare_bridge_pending)" \
+        phy "$(read_p passthru_awdl_phy)" \
+        mcs "$(read_p passthru_awdl_mcs)" \
+        nss "$(read_p passthru_awdl_nss)" \
+        batch "$(read_p passthru_awdl_amsdu_max)" \
+        collect "$(read_p passthru_awdl_collect_us)" \
+        callback "$([ -e "$STATE/callback-off" ] && echo off || echo on)"
 }
 idle() {
     [ ! -e "$STATE/ui-session" ] && [ ! -d "$STATE/coex-session" ] &&
@@ -117,6 +128,43 @@ idle() {
 }
 case "${1:-status}" in
     status) [ "$#" = 1 ] || exit 2;status;;
+    share-mode)
+        [ "$#" = 2 ] || exit 2
+        valid_share_mode "$2" || exit 2
+        [ "$(id -u)" = 0 ] || fail '需要 KernelSU root 权限。'
+        exec 7> "$STATE/share-mode.flock";flock -n 7 7>&7 || fail '分享入口正在保存，请稍后重试。'
+        # Keep the applied mode stable until the supervisor confirms idle.
+        init_share_mode || fail '无法确认当前分享入口，设置未修改。'
+        /system/bin/settings put global "$SHARE_MODE_KEY" "$2" || fail '保存分享入口失败。'
+        [ "$(saved_share_mode)" = "$2" ] || fail '分享入口保存结果未确认，请刷新后核对。'
+        if [ "$2" = "$(active_share_mode)" ];then
+            /system/bin/setprop debug.opairshare.share_switching 0 || fail '切换状态未确认，请刷新后核对。'
+        elif [ -z "$(pidof "$PKG" 2>/dev/null || true)" ] &&
+             [ ! -e "$STATE/ui-session" ] && [ ! -d "$STATE/coex-session" ] &&
+             [ ! -d "$STATE/coex-session.preparing" ];then
+            /system/bin/setprop debug.opairshare.share_mode "$2" || fail '分享入口保存成功，等待后台应用。'
+        fi
+        status
+        ;;
+    receive-directory-set|receive-directory-reset)
+        [ "$(id -u)" = 0 ] || fail '需要 KernelSU root 权限。'
+        if [ "$1" = receive-directory-set ];then
+            [ "$#" = 2 ] || exit 2
+            valid_receive_directory_hex "$2" || fail '请输入 Download 或 Documents 下的目录，不能包含隐藏目录、非法字符或路径跳转。'
+            directory_value=$(printf '%s' "$2" | tr A-F a-f)
+        else
+            [ "$#" = 1 ] || exit 2
+            directory_value=
+        fi
+        exec 7> "$STATE/receive-directory.flock";flock -n 7 7>&7 || fail '目录正在保存，请稍后重试。'
+        if [ -n "$directory_value" ];then
+            result=$(/system/bin/settings put global "$RECEIVE_DIRECTORY_KEY" "$directory_value") || fail '保存接收目录失败。'
+        else
+            result=$(/system/bin/settings delete global "$RECEIVE_DIRECTORY_KEY") || fail '恢复默认接收目录失败。'
+        fi
+        [ "$(read_receive_directory_hex)" = "$directory_value" ] || fail '目录保存结果未确认，请刷新后核对。'
+        status
+        ;;
     name-set|name-reset)
         [ "$(id -u)" = 0 ] || fail '需要 KernelSU root 权限。'
         if [ "$1" = name-set ];then
@@ -183,34 +231,19 @@ case "${1:-status}" in
         ;;
     apply)
         [ "$#" = 5 ] || exit 2
-        case "$2" in on|off) ;;*) exit 2;;esac
-        case "$3" in auto|same149) ;;*) exit 2;;esac
+        [ "$2" = on ] || exit 2
+        [ "$3" = auto ] || exit 2
         case "$4" in off|on|vht|fast) ;;*) exit 2;;esac
         case "$5" in on|off) ;;*) exit 2;;esac
         [ "$(id -u)" = 0 ] || fail '需要 KernelSU root 权限。'
         exec 9> "$STATE/stack.flock";flock -n 9 9>&9 || fail '底层正在执行其他操作，请稍后重试。'
         exec 6> "$STATE/settings.flock";flock -n 6 6>&6 || fail '发现会话正在启动，请稍后重试。'
-        if [ "$2" = off ] && [ "$(coexist)" = on ] &&
-           [ "$3:$4:$5" = "$(scope):$(profile):$(flag autostart)" ] && background_can_close;then
-            # Request normal supervisor teardown. Revert if it cannot finish;
-            # a concurrent invitation/transfer keeps the existing safety gate.
-            touch "$STATE/coex-off"
-            trap 'rm -f "$STATE/coex-off"' EXIT
-            trap 'exit 130' INT
-            trap 'exit 143' TERM
-            background_wait=0
-            while { [ -e "$STATE/ui-session" ] || [ -d "$STATE/coex-session" ]; } &&
-                  [ "$background_wait" -lt 20 ];do sleep 1;background_wait=$((background_wait+1));done
-            idle
-            trap - EXIT INT TERM
-            status;exit 0
-        fi
         idle
         [ "$2" != on ] || [ ! -e "$STATE/callback-off" ] || fail '先恢复进度/发现补丁后再开启共存。'
         old_coex=$(coexist);old_scope=$(scope);old_profile=$(profile);old_auto=$(flag autostart)
         if [ "$2:$3:$4:$5" = "$old_coex:$old_scope:$old_profile:$old_auto" ];then status;exit 0;fi
         snapshot=$(mktemp -d "$STATE/webui-settings.XXXXXX")
-        markers='coex-off coex-same149-only turbo-off turbo-vht turbo-fast turbo-on autostart autostart-off'
+        markers='turbo-off turbo-vht turbo-fast turbo-on autostart autostart-off'
         knobs='passthru_awdl_amsdu passthru_awdl_amsdu_max passthru_awdl_amsdu_bytes passthru_awdl_phy passthru_awdl_mcs passthru_awdl_nss passthru_awdl_collect_us passthru_awdl_bw'
         for name in $markers;do [ ! -e "$STATE/$name" ] || touch "$snapshot/marker-$name";done
         for name in $knobs;do [ ! -r "$P/$name" ] || cat "$P/$name" > "$snapshot/$name";done
@@ -235,8 +268,6 @@ case "${1:-status}" in
         trap 'exit 130' INT
         trap 'exit 143' TERM
         if [ "$4" != "$old_profile" ];then /system/bin/sh "$MODDIR/bin/turbo.sh" "$4" > "$snapshot/profile-result.txt";fi
-        if [ "$2" = on ];then rm -f "$STATE/coex-off";else touch "$STATE/coex-off";fi
-        if [ "$3" = same149 ];then touch "$STATE/coex-same149-only";else rm -f "$STATE/coex-same149-only";fi
         if [ "$4" = on ];then touch "$STATE/turbo-on";else rm -f "$STATE/turbo-on";fi
         if [ "$5" = on ];then
             touch "$STATE/autostart";rm -f "$STATE/autostart-off"
@@ -246,5 +277,5 @@ case "${1:-status}" in
         trap - EXIT INT TERM
         status
         ;;
-    *) echo 'usage: settings.sh status|logs|apply on/off auto/same149 off/on/vht/fast on/off' >&2;exit 2;;
+    *) echo 'usage: settings.sh status|logs|share-mode quickshare/oshare/both|apply on auto off/on/vht/fast on/off' >&2;exit 2;;
 esac

@@ -27,16 +27,20 @@ framework() {{ cat '{self.base}/wifi'; }}
         for name,code in [('id','echo 0'),('flock','exit "${TEST_LOCK_BUSY:-0}"')]:
             p=self.tools/name;p.write_text('#!/bin/sh\n'+code+'\n');p.chmod(0o755)
         self.env=dict(os.environ,PATH=str(self.tools)+os.pathsep+os.environ['PATH'])
-        for name in ['airdrop-name.sh', 'coex-wifi.sh']:
+        for name in ['airdrop-name.sh', 'receive-directory.sh', 'coex-wifi.sh', 'webui-status.sh', 'share-mode.sh']:
             (self.bin/name).write_text((ROOT/'module/bin'/name).read_text().replace('/system/bin/',str(self.tools)+'/'))
         for name,code in [
-            ('getprop','case "$1" in ro.vendor.oplus.market.enname) echo "${TEST_MARKET_NAME-OnePlus 13}";;ro.product.model) echo PJZ110;;esac'),
+            ('getprop','case "$1" in ro.vendor.oplus.market.enname) echo "${TEST_MARKET_NAME-OnePlus 13}";;ro.product.model) echo PJZ110;;debug.opairshare.share_mode) cat "$SHARE_MODE_ACTIVE_STORE" 2>/dev/null || true;;esac'),
+            ('setprop','[ "${TEST_MODE_PROPERTY_FAIL:-0}" = 0 ] || exit 1; [ "$1" != debug.opairshare.share_mode ] || printf "%s" "$2" > "$SHARE_MODE_ACTIVE_STORE"'),
             ('xxd','exec /usr/bin/xxd "$@"'),
-            ('settings', 'case "$1" in get) cat "$NAME_STORE" 2>/dev/null || echo null;;put) [ "${TEST_NAME_WRITE_FAIL:-0}" = 0 ] || exit 1; printf "%s" "$4" > "$NAME_STORE";;delete) [ "${TEST_NAME_WRITE_FAIL:-0}" = 0 ] || exit 1; rm -f "$NAME_STORE";;esac')]:
+            ('settings', 'store="$NAME_STORE"; case "$3" in opairshare_receive_directory_hex) store="$DIRECTORY_STORE";;opairshare_share_mode) store="$SHARE_MODE_STORE";;esac; case "$1" in get) cat "$store" 2>/dev/null || echo null;;put) [ "${TEST_NAME_WRITE_FAIL:-0}" = 0 ] || exit 1; printf "%s" "$4" > "$store";;delete) [ "${TEST_NAME_WRITE_FAIL:-0}" = 0 ] || exit 1; rm -f "$store";;esac')]:
             tool=self.tools/name;tool.write_text('#!/bin/sh\n'+code+'\n');tool.chmod(0o755)
         self.env['NAME_STORE']=str(self.base/'name-store')
+        self.env['DIRECTORY_STORE']=str(self.base/'directory-store')
+        self.env['SHARE_MODE_STORE']=str(self.base/'share-mode-store')
+        self.env['SHARE_MODE_ACTIVE_STORE']=str(self.base/'share-mode-active-store')
         self.script=self.bin/'settings.sh'
-        self.script.write_text((ROOT/'module/bin/settings.sh').read_text().replace('/sys/module/qca_cld3_peach_v2/parameters',str(self.params)).replace('/system/bin/sh','sh').replace('/system/bin/settings',str(self.tools/'settings')))
+        self.script.write_text((ROOT/'module/bin/settings.sh').read_text().replace('/sys/module/qca_cld3_peach_v2/parameters',str(self.params)).replace('/system/bin/sh','sh').replace('/system/bin/settings',str(self.tools/'settings')).replace('/system/bin/setprop',str(self.tools/'setprop')))
         self.turbo=(ROOT/'module/bin/turbo.sh').read_text().replace('/sys/module/qca_cld3_peach_v2/parameters',str(self.params))
         (self.bin/'turbo.sh').write_text(self.turbo)
         self.original={'opairshare_channel_state':'cookie=1 busy=0 fault=0 error=0 accepting=0 vdev=255 freq=0',
@@ -60,13 +64,13 @@ framework() {{ cat '{self.base}/wifi'; }}
         self.assertEqual(data['network'],'"V\\quote\\\""')
         self.assertEqual(data['editable'],'on');self.assertEqual(data['scope'],'auto')
     def test_apply_profile_scope_coexist_and_autostart(self):
-        data=json.loads(self.run_api('apply','on','same149','vht','off').stdout)
-        self.assertEqual((data['profile'],data['scope'],data['autostart']),('vht','same149','off'))
+        data=json.loads(self.run_api('apply','on','auto','vht','off').stdout)
+        self.assertEqual((data['profile'],data['scope'],data['autostart']),('vht','auto','off'))
         self.assertEqual(self.params_now()['passthru_awdl_nss'],'1')
         self.assertEqual(self.params_now()['passthru_awdl_collect_us'],'0')
-        self.assertTrue((self.state/'coex-same149-only').exists())
-        data=json.loads(self.run_api('apply','off','auto','fast','on').stdout)
-        self.assertEqual(data['coexist'],'off');self.assertEqual(data['scope'],'auto')
+        self.assertFalse((self.state/'coex-same149-only').exists())
+        data=json.loads(self.run_api('apply','on','auto','fast','on').stdout)
+        self.assertEqual(data['coexist_requested'],'on');self.assertEqual(data['scope'],'auto')
         self.assertEqual(self.params_now()['passthru_awdl_nss'],'2')
     def test_active_or_uncertain_session_rejects_all_changes(self):
         for name in ['ui-session','coex-session','coex-session.preparing']:
@@ -74,11 +78,11 @@ framework() {{ cat '{self.base}/wifi'; }}
             if name=='ui-session':p.touch()
             else:p.mkdir()
             self.assertEqual(json.loads(self.run_api('status').stdout)['editable'],'off')
-            self.run_api('apply','off','same149','off','off',ok=False)
+            self.run_api('apply','on','auto','off','off',ok=False)
             self.assertEqual(self.params_now(),self.original)
             p.unlink() if p.is_file() else p.rmdir()
         self.env['TEST_TRANSFER_BUSY']='9'
-        self.run_api('apply','off','same149','off','off',ok=False)
+        self.run_api('apply','on','auto','off','off',ok=False)
         self.assertEqual(self.markers(),['autostart','turbo-fast'])
     def test_invalid_input_and_injection_do_not_change_settings(self):
         for args in [('apply','on;touch hacked','auto','fast','on'),('apply','on','149','fast','on'),
@@ -89,16 +93,16 @@ framework() {{ cat '{self.base}/wifi'; }}
     def test_failed_live_profile_restores_all_knobs_and_markers(self):
         broken=self.turbo.replace("set_p() { printf '%s'", "set_p() { [ \"$1\" != passthru_awdl_mcs ] || return 1; printf '%s'")
         (self.bin/'turbo.sh').write_text(broken)
-        r=self.run_api('apply','off','same149','vht','off',ok=False)
+        r=self.run_api('apply','on','auto','vht','off',ok=False)
         self.assertIn('还原',r.stderr)
         self.assertEqual(self.params_now(),self.original)
         self.assertEqual(self.markers(),['autostart','turbo-fast'])
     def test_lock_contention_and_pending_data_reject(self):
         self.env['TEST_LOCK_BUSY']='1'
-        self.run_api('apply','off','auto','vht','on',ok=False)
+        self.run_api('apply','on','auto','vht','on',ok=False)
         self.env.pop('TEST_LOCK_BUSY')
         (self.params/'opairshare_bridge_pending').write_text('2\n')
-        self.run_api('apply','off','auto','vht','on',ok=False)
+        self.run_api('apply','on','auto','vht','on',ok=False)
         self.assertEqual(self.markers(),['autostart','turbo-fast'])
     def test_offline_save_persists_for_next_start(self):
         for p in self.params.iterdir():p.unlink()
@@ -109,40 +113,20 @@ framework() {{ cat '{self.base}/wifi'; }}
         for p in self.params.iterdir():p.unlink()
         data=json.loads(self.run_api('status').stdout)
         self.assertEqual(data['editable'],'on');self.assertEqual(data['ready'],'off')
-        data=json.loads(self.run_api('apply','on','same149','fast','off').stdout)
-        self.assertEqual(data['scope'],'same149');self.assertEqual(data['autostart'],'off')
+        data=json.loads(self.run_api('apply','on','auto','fast','off').stdout)
+        self.assertEqual(data['scope'],'auto');self.assertEqual(data['autostart'],'off')
 
-    def test_same149_scope_refuses_channel40_before_mutation(self):
-        # Execute production coexistence entry, including its shared settings lock.
-        for key in ['passthru_awdl_allow_concurrent','passthru_mgmt_home_channel']:(self.params/key).write_text('N\n')
-        (self.base/'wifi').write_text('Wifi is enabled\nWifi is connected to test\nSupplicant state: COMPLETED, Frequency: 5200MHz, Net ID: 7,\n')
-        (self.state/'coex-same149-only').touch()
-        tools=self.tools
-        (tools/'getprop').write_text('#!/bin/sh\nexit 0\n');(tools/'getprop').chmod(0o755)
-        (tools/'setprop').write_text('#!/bin/sh\nexit 0\n');(tools/'setprop').chmod(0o755)
-        p=self.bin/'coex-session.sh';p.write_text((ROOT/'module/bin/coex-session.sh').read_text().replace('/sys/module/qca_cld3_peach_v2/parameters',str(self.params)))
-        r=subprocess.run(['sh',str(p),'prepare'],env=self.env,capture_output=True,text=True)
-        self.assertNotEqual(r.returncode,0);self.assertIn('same149-only',r.stdout)
-        self.assertIn('reason=wifi_not149',r.stdout)
-        self.assertFalse((self.state/'coex-session').exists())
-        self.assertEqual((self.params/'passthru_awdl_allow_concurrent').read_text().strip(),'N')
-        # Old scope=auto configurations cannot opt back into cross5g.
-        (self.state/'coex-same149-only').unlink()
-        r=subprocess.run(['sh',str(p),'prepare'],env=self.env,capture_output=True,text=True)
-        self.assertNotEqual(r.returncode,0)
-        self.assertFalse((self.state/'coex-session').exists())
-        self.assertEqual((self.params/'passthru_awdl_allow_concurrent').read_text().strip(),'N')
+    def test_legacy_off_and_strict_markers_do_not_disable_full_band_coexistence(self):
+        (self.state/'coex-off').touch();(self.state/'coex-same149-only').touch()
+        for frequency in [2412,2447,5200,5745,5805,6115]:
+            (self.base/'wifi').write_text(f'Wifi is enabled\nWifi is connected to test\nSupplicant state: COMPLETED, Frequency: {frequency}MHz, Net ID: 7,\n')
+            data=json.loads(self.run_api('status').stdout)
+            self.assertEqual((data['coexist'],data['coexist_requested'],data['scope']),('on','on','auto'))
 
-    def test_status_distinguishes_suspended_coexistence_from_manual_off(self):
-        (self.base/'wifi').write_text('Wifi is enabled\nWifi is connected to test\nSupplicant state: COMPLETED, Frequency: 5200MHz, Net ID: 7,\n')
+    def test_disconnection_pauses_actual_session_but_never_changes_policy(self):
+        (self.base/'wifi').write_text('Wifi is enabled\n')
         data=json.loads(self.run_api('status').stdout)
-        self.assertEqual((data['coexist'],data['coexist_requested'],data['coexist_reason']),
-                         ('off','on','wifi_not149'))
-        self.run_api('apply','off','auto','fast','on')
-        (self.base/'wifi').write_text('Wifi is enabled\nWifi is connected to test\nSupplicant state: COMPLETED, Frequency: 5745MHz, Net ID: 7,\n')
-        data=json.loads(self.run_api('status').stdout)
-        self.assertEqual((data['coexist'],data['coexist_requested'],data['coexist_reason']),
-                         ('off','off','manual'))
+        self.assertEqual((data['coexist'],data['coexist_requested'],data['coexist_reason']),('off','on','wifi_disconnected'))
 
     def background_session(self):
         (self.state/'ui-session').write_text('boot')
@@ -164,27 +148,17 @@ framework() {
 }
 ''')
 
-    def test_idle_background_can_disable_coexistence_through_normal_teardown(self):
-        self.background_session()
-        self.assertEqual(json.loads(self.run_api('status').stdout)['editable'], 'on')
-        sleep=self.tools/'sleep'
-        sleep.write_text(f'''#!/bin/sh
-[ -f '{self.state}/coex-off' ] || exit 1
-rm -f '{self.state}/ui-session' '{self.state}/coex-session/boot'
-rmdir '{self.state}/coex-session'
-printf '%s' 'cookie=1 busy=0 fault=0 error=0 accepting=0 vdev=255 freq=0' > '{self.params}/opairshare_channel_state'
-printf '%s' 'used=0 armed=0 pending=0 active=0 fault=0' > '{self.params}/opairshare_awdl_rx_mac_filter'
-''');sleep.chmod(0o755)
-        result=json.loads(self.run_api('apply','off','auto','fast','on').stdout)
-        self.assertEqual((result['coexist'],result['editable']),('off','on'))
-        self.assertFalse((self.state/'ui-session').exists())
+    def test_coexistence_cannot_be_disabled_even_when_idle(self):
+        for args in [('coexist','off'),('coexist','on'),('apply','off','auto','fast','on'),('apply','on','same149','fast','on')]:
+            self.run_api(*args,ok=False)
+        self.assertFalse((self.state/'coex-off').exists())
 
     def test_busy_or_foreground_background_session_still_rejects_changes(self):
         self.background_session()
         for flag in ['TEST_TRANSFER_BUSY','TEST_BG_SHARING']:
             self.env[flag]='1'
             self.assertEqual(json.loads(self.run_api('status').stdout)['editable'],'off')
-            self.run_api('apply','off','auto','fast','on',ok=False)
+            self.run_api('apply','on','auto','fast','on',ok=False)
             self.assertFalse((self.state/'coex-off').exists())
             self.env.pop(flag)
 

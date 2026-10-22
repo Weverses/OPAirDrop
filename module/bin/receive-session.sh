@@ -4,9 +4,12 @@ set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
 . "$MODDIR/bin/coex-wifi.sh"
+. "$MODDIR/bin/share-mode.sh"
 [ "$(id -u)" = 0 ] || exit 2
 
 receive_wanted() {
+    [ "$(saved_share_mode)" = "$(active_share_mode)" ] || return 1
+    [ "$(active_share_mode)" != quickshare ] || return 1
     # User-selected policy: the enabled module owns continuous reception.
     # OShare is the invitation UI host, not the switch or ten-minute timer.
     same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&

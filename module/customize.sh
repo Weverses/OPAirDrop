@@ -27,15 +27,16 @@ if [ -s "$MODPATH/gms-unlock/mounts.list" ]; then
     done
 fi
 mkdir -p /data/adb/opairshare
+rm -f /data/adb/opairshare/coex-off /data/adb/opairshare/coex-same149-only
 if [ ! -e /data/adb/opairshare/autostart-off ];then touch /data/adb/opairshare/autostart;fi
-# Preserve explicit compatibility profiles. Otherwise select the tested fast profile.
+# Preserve explicit compatibility profiles. Otherwise select the fast profile.
 if [ ! -e /data/adb/opairshare/turbo-off ] && [ ! -e /data/adb/opairshare/turbo-vht ] && [ ! -e /data/adb/opairshare/turbo-on ]; then
     touch /data/adb/opairshare/turbo-fast
 fi
 rm -f /data/adb/opairshare/disabled /data/adb/opairshare/startup-incomplete
 ui_print '- Reboot once; the driver/native service starts automatically'
 ui_print '- Fast profile is the default; compatibility fallback: su -c "sh /data/adb/modules/opairshare/bin/turbo.sh off"'
-ui_print '- AirDrop receives in background on Wi-Fi channel40/149, independently of OShare visibility'
+ui_print '- AirDrop background receive follows the selected sharing mode and Wi-Fi coexistence policy'
 ui_print '- Original signed APKs stay in system; callback APK mounts after boot; no firmware or partition writes'
 ui_print '- RX re-arms after real vdev delete and normal teardown; uncertain states quarantine'
 

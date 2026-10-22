@@ -3,9 +3,9 @@ AIR_NAME_KEY=opairshare_airdrop_name_hex
 
 valid_name_hex() {
     case "$1" in ''|*[!0-9a-fA-F]*) return 1;; esac
-    [ "${#1}" -le 512 ] && [ $((${#1} % 2)) = 0 ] || return 1
+    [ "${#1}" -le $((${2:-64} * 8)) ] && [ $((${#1} % 2)) = 0 ] || return 1
     # Validate UTF-8, Unicode scalar values, controls and 64-character limit.
-    awk -v data="$1" 'BEGIN {
+    awk -v data="$1" -v limit="${2:-64}" 'BEGIN {
         data=tolower(data); n=length(data)/2; count=0; visible=0
         for(i=1;i<=n;) {
             b=byte(i++); cp=b; more=0; minimum=0
@@ -18,7 +18,7 @@ valid_name_hex() {
             if(cp<minimum||cp>1114111||(cp>=55296&&cp<=57343))exit 1
             if(cp<32||(cp>=127&&cp<=159)||cp==8232||cp==8233)exit 1
             if(cp!=32&&cp!=160&&cp!=5760&&!(cp>=8192&&cp<=8202)&&cp!=8239&&cp!=8287&&cp!=12288&&cp!=65279)visible=1
-            if(++count>64)exit 1
+            if(++count>limit)exit 1
         }
         if(!visible)exit 1
     }

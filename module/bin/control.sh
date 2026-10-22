@@ -200,6 +200,8 @@ rx_auto_wait() {
     return 6
 }
 activate_provider() {
+    . "$MODDIR/bin/share-mode.sh"
+    init_share_mode || return 3
     # Passive native service stays resident. Only the visible QuickShare UI
     # owns the original provider; background receiving cannot restart radio.
     owner=$(cat "$STATE/supervisor.pid" 2>/dev/null || true)
@@ -285,7 +287,7 @@ case "${1:-status}" in
             passthru_ndi_fw_authorize=0 passthru_awdl_wmi_raw=1 \
             passthru_awdl_target_mac="" passthru_awdl_target_auto=1 passthru_awdl_target_enable=1 passthru_awdl_target_auth=2 \
             passthru_native_data_rx=1 passthru_awdl_backpressure=1 passthru_awdl_raw_rx=1 passthru_awdl_rate_mbps=54 \
-            passthru_awdl_host_seq=1 passthru_awdl_rx_dedup=1 passthru_awdl_attempts=3 passthru_awdl_rx_auto=1 passthru_awdl_rx_rearm=1 passthru_sta_coexist=2 passthru_sta_regular_rx=1 passthru_sta_action_rx=1 passthru_pas_discovery_actions=1 $turbo_args
+            passthru_awdl_host_seq=1 passthru_awdl_rx_dedup=1 passthru_awdl_attempts=3 passthru_awdl_rx_auto=1 passthru_awdl_rx_rearm=1 passthru_sta_coexist=3 passthru_sta_regular_rx=1 passthru_sta_action_rx=1 passthru_pas_discovery_actions=1 $turbo_args
         rmmod mac80211
         boot_id > "$STATE/mac-swapped"
         insmod "$MODDIR/payload/kernel/mac80211.ko"

@@ -4,13 +4,16 @@
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
+. "$MODDIR/bin/receive-startup.sh"
 . "$MODDIR/bin/coex-wifi.sh"
 . "$MODDIR/bin/kernel-identity.sh"
+. "$MODDIR/bin/share-mode.sh"
 init_state
 exec 8> "$STATE/provider.flock"
 flock -n 8 8>&8 || exit 0
 echo "$$" > "$STATE/supervisor.pid"
 cleanup() {
+    receive_warmup_cleanup
     /system/bin/sh "$MODDIR/bin/receive-session.sh" clear 8>&- || echo 'Cannot clear AirDrop receive readiness' >&2
     [ "$(cat "$STATE/supervisor.pid" 2>/dev/null || true)" != "$$" ] || rm -f "$STATE/supervisor.pid"
     [ "$(cat "$STATE/supervisor-ready" 2>/dev/null || true)" != "$(boot_id) $$" ] || rm -f "$STATE/supervisor-ready"
@@ -32,16 +35,18 @@ wifi_session() {
 }
 
 foreground_state() {
+    SHARE_MODE=$(active_share_mode)
     activities_file="$STATE/foreground-$$.txt"
     if ! /system/bin/timeout 4 /system/bin/dumpsys activity activities > "$activities_file" 2>/dev/null; then
         echo unknown;return
     fi
     resumed=$(grep -E 'topResumedActivity=|mResumedActivity:|ResumedActivity:' "$activities_file" || true)
     if [ -z "$resumed" ];then echo unknown;return;fi
-    if printf '%s\n' "$resumed" | grep -Eq '(com\.google\.android\.gms/[^ ]*nearby\.sharing\.|com\.coloros\.oshare/(\.ui\.ShareActivity|com\.(oplus|coloros)\.oshare\.ui\.ShareActivity))'; then
+    if { [ "$SHARE_MODE" != oshare ] && printf '%s\n' "$resumed" | grep -Eq 'com\.google\.android\.gms/[^ ]*nearby\.sharing\.'; } ||
+       { [ "$SHARE_MODE" != quickshare ] && printf '%s\n' "$resumed" | grep -Eq 'com\.coloros\.oshare/(\.ui\.ShareActivity|com\.(oplus|coloros)\.oshare\.ui\.ShareActivity)'; }; then
         echo open;return
     fi
-    if [ -e "$STATE/ui-session" ] &&
+    if [ "$SHARE_MODE" != oshare ] && [ -e "$STATE/ui-session" ] &&
        printf '%s\n' "$resumed" | grep -Eq '(com\.android\.documentsui|com\.google\.android\.documentsui)/';then
         task=$(printf '%s\n' "$resumed" | sed -n 's/.* t\([0-9][0-9]*\).*/\1/p' | head -n 1)
         if [ -n "$task" ] &&
@@ -76,46 +81,38 @@ close_session() {
     echo 'UI_CLOSED_RADIO_RELEASED_DRIVER_RETAINED'
 }
 
-# Serialize automatic suspension with WebUI preference changes. The manual
-# coex-off marker is never rewritten here; channel149 can restore only opt-in.
+# Serialize connection changes with settings and sharing-mode transitions.
 monitor_coex_wifi() {
     coex_recover=0
     exec 6> "$STATE/settings.flock"
     if ! flock -n 6 6>&6;then
         exec 6>&-
-        # settings.sh holds this lock while waiting for an idle background
-        # session to close. Honor its off request without mutating preferences.
-        if [ -e "$STATE/coex-off" ] && [ -d "$STATE/coex-session" ];then
-            coex_recover=1;return 0
-        fi
         return 1
     fi
-    if coex_requested;then
-        if coex_wifi_read;then
-            if [ -e "$STATE/coex-wifi-blocked" ];then
-                rm -f "$STATE/coex-wifi-blocked" || { exec 6>&-;return 1; }
-                echo 'COEX_WIFI_ELIGIBLE channel=149'
-            fi
-            if [ -d "$STATE/coex-session" ] &&
-               { [ "$(cat "$STATE/coex-session/frequency" 2>/dev/null)" != 5745 ] ||
-                 [ "$(cat "$STATE/coex-session/network" 2>/dev/null)" != "$coex_wifi_network" ]; };then
-                if [ ! -e "$STATE/coex-session/invalidated" ];then
-                    touch "$STATE/coex-session/invalidated" || { exec 6>&-;return 1; }
-                    echo 'COEX_WIFI_CHANGED: rebuilding session when idle'
-                fi
-            fi
-            # A foreground legacy session must stop before upgrading to coex.
-            if [ -e "$STATE/ui-session" ] && [ ! -d "$STATE/coex-session" ];then coex_recover=1;fi
-        else
-            if [ "$(cat "$STATE/coex-wifi-blocked" 2>/dev/null)" != "$coex_wifi_reason" ];then
-                printf '%s\n' "$coex_wifi_reason" > "$STATE/coex-wifi-blocked.tmp" &&
-                    mv "$STATE/coex-wifi-blocked.tmp" "$STATE/coex-wifi-blocked" || { exec 6>&-;return 1; }
-                echo "COEX_WIFI_SUSPENDED reason=$coex_wifi_reason frequency=${coex_wifi_frequency:-unknown}"
-            fi
-            [ ! -d "$STATE/coex-session" ] || touch "$STATE/coex-session/invalidated" || { exec 6>&-;return 1; }
+    if coex_wifi_eligible;then
+        if [ -e "$STATE/coex-wifi-blocked" ];then
+            rm -f "$STATE/coex-wifi-blocked" || { exec 6>&-;return 1; }
+            echo "COEX_WIFI_ELIGIBLE class=$coex_wifi_class frequency=${coex_wifi_frequency:-none}"
         fi
+        # A class/scope/network change needs a fresh profile. A channel
+        # change inside the same class is handled by the driver policy.
+        if [ -d "$STATE/coex-session" ] &&
+           { [ "$(cat "$STATE/coex-session/class" 2>/dev/null)" != "$coex_wifi_class" ] ||
+             [ "$(cat "$STATE/coex-session/scope" 2>/dev/null)" != "$(coex_scope)" ] ||
+             [ "$(cat "$STATE/coex-session/network" 2>/dev/null)" != "$coex_wifi_network" ]; };then
+            if [ ! -e "$STATE/coex-session/invalidated" ];then
+                touch "$STATE/coex-session/invalidated" || { exec 6>&-;return 1; }
+                echo 'COEX_WIFI_CHANGED: rebuilding session when idle'
+            fi
+        fi
+        # A foreground legacy session must stop before upgrading to coex.
+        if [ -e "$STATE/ui-session" ] && [ ! -d "$STATE/coex-session" ];then coex_recover=1;fi
     else
-        rm -f "$STATE/coex-wifi-blocked" || { exec 6>&-;return 1; }
+        if [ "$(cat "$STATE/coex-wifi-blocked" 2>/dev/null)" != "$coex_wifi_reason" ];then
+            printf '%s\n' "$coex_wifi_reason" > "$STATE/coex-wifi-blocked.tmp" &&
+                mv "$STATE/coex-wifi-blocked.tmp" "$STATE/coex-wifi-blocked" || { exec 6>&-;return 1; }
+            echo "COEX_WIFI_SUSPENDED reason=$coex_wifi_reason class=${coex_wifi_class:-unknown} frequency=${coex_wifi_frequency:-unknown}"
+        fi
         [ ! -d "$STATE/coex-session" ] || touch "$STATE/coex-session/invalidated" || { exec 6>&-;return 1; }
     fi
     if [ -e "$STATE/coex-session/invalidated" ];then coex_recover=1;fi
@@ -136,6 +133,10 @@ while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&
         echo 'Native server lost; explicit recovery required'; exit 6
     fi
     printf '%s %s\n' "$(boot_id)" "$$" > "$STATE/supervisor-ready"
+    if ! apply_share_mode;then
+        receive_published=0
+        sleep 1;continue
+    fi
     if ! monitor_coex_wifi;then
         /system/bin/sh "$MODDIR/bin/receive-session.sh" clear 8>&-
         receive_published=0
@@ -184,30 +185,30 @@ while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&
     if [ "$foreground" = open ] || [ "$receive_eligible" = 1 ]; then
         off_samples=0
         if [ ! -e "$STATE/ui-session" ]; then
-            # An unreadable framework state must not trigger legacy Wi-Fi
-            # disconnection as a side effect of an automatic fallback.
-            if coex_requested && [ "$(cat "$STATE/coex-wifi-blocked" 2>/dev/null)" = wifi_unavailable ];then
+            # Requested coexistence never mutates association/autojoin. When
+            # the current association cannot be served (disconnected, Wi-Fi
+            # disabled or a strict-scope mismatch), keep the share UI without a
+            # module-owned session and wait for a supported state.
+            if coex_requested && [ -e "$STATE/coex-wifi-blocked" ];then
                 sleep 1;continue
             fi
             # A stale same-boot snapshot belongs to an interrupted session.
             [ ! -e "$STATE/session-wifi" ] || { echo 'Unrestored UI session; stop required'; exit 8; }
             exec 6> "$STATE/settings.flock"
             if ! flock -n 6 6>&6;then exec 6>&-;sleep 1;continue;fi
-            # Unsupported connections use the ordinary foreground-only path.
-            # The automatic marker preserves the user's preference for recovery.
-            if [ ! -e "$STATE/coex-wifi-blocked" ] &&
-               ! OPAIRSHARE_SETTINGS_LOCK_HELD=1 /system/bin/sh "$MODDIR/bin/coex-session.sh" prepare 8>&- 6>&6; then
+            # A transient prepare failure retries; the user's preference stays.
+            if ! OPAIRSHARE_SETTINGS_LOCK_HELD=1 /system/bin/sh "$MODDIR/bin/coex-session.sh" prepare 8>&- 6>&6; then
                 /system/bin/sh "$MODDIR/bin/coex-session.sh" restore 8>&- || exit 8
                 exec 6>&-
                 sleep 3
                 continue
             fi
-            # Coexistence never changes association/autojoin. Only legacy mode
-            # needs the original helper, whose restore may reconnect Wi-Fi.
-            if [ ! -d "$STATE/coex-session" ]; then wifi_session capture || exit 8; fi
+            [ -d "$STATE/coex-session" ] || { exec 6>&-;sleep 1;continue; }
             boot_id > "$STATE/ui-session"
             startup_trace COEX_READY
             exec 6>&-
+            receive_warmup_start
+            startup_trace PROVIDER_START_BEGIN
             if ! /system/bin/timeout -k 2 35 /system/bin/sh "$MODDIR/bin/provider.sh" ensure 8>&-; then
                 provider_ready=0
                 provider_failures=1
@@ -216,6 +217,8 @@ while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&
                 provider_ready=1
                 echo 'UI_OR_RECEIVE_ORIGINAL_PROVIDER_READY'
             fi
+            startup_trace PROVIDER_START_DONE
+            receive_warmup_wait
             provider_samples=0
         else
             provider_samples=$((provider_samples+1))

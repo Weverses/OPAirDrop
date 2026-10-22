@@ -2,12 +2,15 @@
 MODDIR=${0%/*}
 . "$MODDIR/bin/common.sh"
 init_state
+rm -f "$STATE/coex-off" "$STATE/coex-same149-only"
 : > "$STATE/startup-trace.log"
 startup_trace BOOT_SERVICE_ENTER
 i=0
 while [ "$(getprop sys.boot_completed)" != 1 ] && [ "$i" -lt 90 ];do sleep 2;i=$((i+1));done
 [ "$(getprop sys.boot_completed)" = 1 ] || exit 2
 startup_trace ANDROID_READY
+. "$MODDIR/bin/share-mode.sh"
+init_share_mode || exit 3
 # Complete a recovery-mode install or an LSPosed configuration deferred at install.
 if [ -f "$STATE/oshare-setup-pending" ]; then
     /system/bin/sh "$MODDIR/bin/install-oshare.sh" "$MODDIR" boot >> "$STATE/oshare-install.log" 2>&1 || true

@@ -102,7 +102,7 @@ kernel_matches() {
     [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/passthru_awdl_target_auto)" = Y ] &&
     [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/passthru_awdl_rx_auto)" = Y ] &&
     [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/passthru_awdl_rx_rearm)" = Y ] &&
-    [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/passthru_sta_coexist)" = 2 ] &&
+    [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/passthru_sta_coexist)" = 3 ] &&
     [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/passthru_sta_regular_rx)" = Y ] &&
     [ "$(cat /sys/module/qca_cld3_peach_v2/parameters/passthru_sta_action_rx)" = Y ] &&
     [ "$(module_note qca_cld3_peach_v2)" = "$NOTE_qca_cld3_peach_v2" ] &&
