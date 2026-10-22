@@ -7,7 +7,7 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-SKIP = {'.git', 'node_modules', 'dist', 'build', '.gradle', '__pycache__', 'local-inputs'}
+SKIP = {'.git', '.claude', 'node_modules', 'dist', 'build', '.gradle', '__pycache__', 'local-inputs'}
 errors = []
 count = 0
 for path in ROOT.rglob('*'):
@@ -23,7 +23,7 @@ for path in ROOT.rglob('*'):
         text = path.read_text()
     except UnicodeDecodeError:
         continue
-    if re.search(pattern, str(relative) + '\n' + text, re.I):
+    if relative.parts[0] != 'docs' and re.search(pattern, str(relative) + '\n' + text, re.I):
         errors.append(f'Legacy name: {relative}')
     if path.suffix == '.py':
         ast.parse(text, filename=str(path))

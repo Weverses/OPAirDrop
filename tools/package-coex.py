@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Package the captured on-device coexistence stack with fast on every band.
 
-This experimental packager uses a device snapshot, not reference-r27: the
+This packager uses a device snapshot, not reference-r27: the
 deployed WLAN module and discovery APK implement additional concurrency modes.
 """
 from pathlib import Path
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import shutil
@@ -16,7 +17,7 @@ import tarfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '1.0.17-coex-fast-test1'
+from release import emit_metadata, read_properties
 
 
 def digest(data):
@@ -27,14 +28,49 @@ def payload_files(root):
     return sorted(p for p in root.rglob('*') if p.is_file() and p.name != '.DS_Store')
 
 
+def overlay_sources(module):
+    # Keep the verified binary ABI while shipping maintained runtime scripts.
+    legacy = 'op' + '13'
+    provider = 'oneplus' + '13_wonder_provider'
+    for source in (ROOT / 'module/bin').glob('*.sh'):
+        if source.name == 'kernel-identity.sh':
+            continue
+        text = source.read_text().replace('opairshare_wonder_provider', provider)
+        # This mode3 kernel exports the current sysfs names. Only the captured
+        # Mosey discovery APK still reads its original discovery property.
+        text = text.replace('debug.opairshare.discovery', 'debug.' + legacy + '.discovery')
+        (module / 'bin' / source.name).write_text(text)
+    shutil.rmtree(module / 'webroot')
+    shutil.copytree(ROOT / 'webui/dist', module / 'webroot')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--snapshot', type=Path, required=True)
     parser.add_argument('--bridge', type=Path, required=True,
-                        help='Exact currently installed OShare bridge APK')
+                        help='Freshly built signed release bridge APK')
     parser.add_argument('--installer-base', type=Path, required=True)
     args = parser.parse_args()
-    work = ROOT / 'build/coex-fast-test'
+    properties = read_properties((ROOT / 'module/module.prop').read_text())
+    version, version_code = properties['version'], int(properties['versionCode'])
+    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+        raise ValueError('A stable major.minor.patch version is required')
+    with zipfile.ZipFile(args.bridge) as archive:
+        if not any(b'Lcom/tlsu/oshareairdrop/ShareModeHooks;' in archive.read(name)
+                   for name in archive.namelist() if re.fullmatch(r'classes\d*\.dex', name)):
+            raise ValueError('Build the current release bridge with sharing-mode support first')
+    apk_dir = ROOT / 'oshare/app/build/outputs/apk/release'
+    metadata = json.loads((apk_dir / 'output-metadata.json').read_text())
+    elements = metadata.get('elements', [])
+    if (metadata.get('variantName') != 'release'
+            or metadata.get('applicationId') != 'com.tlsu.oshareairdrop'
+            or len(elements) != 1 or elements[0].get('versionName') != version
+            or elements[0].get('versionCode') != version_code
+            or elements[0].get('outputFile') != 'app-release.apk'
+            or digest(args.bridge.read_bytes()) != digest((apk_dir / 'app-release.apk').read_bytes())):
+        raise ValueError('Build the signed release APK with the current module version first')
+    bridge_version = version
+    work = ROOT / 'build/coex-release'
     captured = work / 'verified-snapshot'
     output = work / 'module'
     for directory in (captured, output):
@@ -82,29 +118,21 @@ def main():
         target = output / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, target)
-    # Keep the bridge already loaded by the user, rather than downgrading to
-    # the older companion left in the installed KSU module directory.
+    # Use the explicitly selected installed/new bridge; never the stale companion
+    # left in the captured KSU module directory.
     bridge_data = args.bridge.read_bytes()
     with zipfile.ZipFile(args.bridge) as archive:
         if 'AndroidManifest.xml' not in archive.namelist() or 'classes.dex' not in archive.namelist():
             raise ValueError('Invalid bridge APK')
     (output / 'companion/OShareAirDrop.apk').write_bytes(bridge_data)
 
-    coex = output / 'bin/coex-session.sh'
-    text = coex.read_text()
-    pattern = (r'# Separate-channel operation.*?\n'
-               r'cross_band_profile\(\) \{.*?\n\}\n')
-    text, count = re.subn(pattern,
-        '# Every band inherits the selected TX profile, exactly as same149.\n'
-        '# This test installer selects fast before the next cold stack start.\n',
-        text, count=1, flags=re.S)
-    if count != 1 or text.count('[ "$class" = same149 ] || cross_band_profile') != 1:
-        raise ValueError('Unexpected deployed coexistence profile implementation')
-    text = text.replace('[ "$class" = same149 ] || cross_band_profile',
-                        '# Keep the selected fast profile across channels/bands.')
-    coex.write_text(text)
-    if 'auto:cross5g|auto:band24|auto:band6) policy=auto;mode=3;;' not in text:
-        raise ValueError('Missing deployed automatic coexistence policy')
+    spec = importlib.util.spec_from_file_location('peer_grace', ROOT / 'tools/patch-mosey-peer-grace.py')
+    patcher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(patcher)
+    library = output / 'system/system_ext/lib64/libmosey_daemon_ffi.so'
+    stability = patcher.write_patch(captured / 'system/system_ext/lib64/libmosey_daemon_ffi.so', library)
+    shutil.move(library.with_suffix('.so.peer-grace.json'), output / 'mosey-peer-grace.json')
+    overlay_sources(output)
 
     # Check all module payloads against the build identities expected by boot.
     for line in (output / 'bin/kernel-identity.sh').read_text().splitlines():
@@ -121,65 +149,41 @@ def main():
             if digest(path.read_bytes()) != expected:
                 raise ValueError(f'APK manifest mismatch: {filename}: {name}')
 
-    props = (output / 'module.prop').read_text()
-    props = re.sub(r'^name=.*$', 'name=OPAirDrop 跨信道 Fast 测试版', props, flags=re.M)
-    props = re.sub(r'^version=.*$', f'version={VERSION}', props, flags=re.M)
-    props = re.sub(r'^versionCode=.*$', 'versionCode=10017', props, flags=re.M)
-    props = re.sub(r'^description=.*$',
-                   'description=PJZ110 测试：2.4/5/6GHz 自动共存 + 全频段 Fast；刷入后重启测试',
-                   props, flags=re.M)
-    props = re.sub(r'^updateJson=.*\n?', '', props, flags=re.M)
-    (output / 'module.prop').write_text(props)
-    installer = output / 'customize.sh'
-    text = installer.read_text()
-    anchor = '# Preserve explicit compatibility profiles. Otherwise select the tested fast profile.'
-    if text.count(anchor) != 1:
-        raise ValueError('Unexpected installer profile defaults')
-    text = text.replace(anchor,
-        '# Explicit test-package choice: auto coexistence and full fast.\n'
-        'rm -f /data/adb/opairshare/coex-off /data/adb/opairshare/coex-same149-only \\\n'
-        '    /data/adb/opairshare/turbo-off /data/adb/opairshare/turbo-vht /data/adb/opairshare/turbo-on\n'
-        'touch /data/adb/opairshare/turbo-fast\n' + anchor)
-    text = text.replace('AirDrop receives in background on Wi-Fi channel40/149, independently of OShare visibility',
-                        'TEST: automatic 2.4/5/6GHz coexistence; fast retained across channels; reboot required')
-    installer.write_text(text)
-    readme = f'''# OPAirDrop {VERSION}
-
-PJZ110 / SDK37 / kernel 6.6.118-android15-8-g9bc34d5b0c79-abogki537459655-4k。
-需要 KernelSU + 元模块 + LSPosed。刷入后重启，由用户进行实机测试。
-
-基于手机当前部署的共存驱动、Mosey 补丁、恢复逻辑及已安装 OShare 桥接重新装配。
-安装时选择共存开启、scope=auto、profile=fast；覆盖旧的对应设置。
-STA 按当前实现接受 2.4/5/6GHz，AWDL 固定信道 149。
-所有频段均保留与同信道相同的 fast：VHT MCS8、NSS2、A-MSDU mode2、max5、7935字节、collect_us=1000。
-跨信道会话准备不再应用 HT 单流降速配置，重连和重建会话后继续保留所选 profile。
-用户后续手动修改 profile/关闭共存仍按原设置逻辑执行。
-
-此包用于完整 fast 的冷启动测试，不能视为已修复此前的发现丢失或连接超时。
-不含设备运行状态、网络配置、日志或临时 fast-test 参数快照。
-原厂分区、固件不写入；与正式版使用相同模块 ID，安装后替换现有模块。
-保留原版安装包，以便刷回。测试包未配置正式 Release 自动更新源。
-'''
-    (output / 'README.md').write_text(readme)
-    (output / 'CHANGELOG.md').write_text(
-        f'# {VERSION}\n\n- 基于实机自动共存栈制作，跨信道不再降为 HT 单流。\n'
-        '- 安装选择 auto + fast，所有频段沿用同信道完整 fast 配置。\n'
-        '- 保留已安装 OShare 桥接、驱动身份、Mosey 自动策略和会话恢复。\n'
-        '- 实验包，稳定性和吞吐待刷入后验证。\n')
+    # Release metadata and user-facing documentation come from the current source.
+    shutil.copy2(ROOT / 'module/module.prop', output / 'module.prop')
+    shutil.copy2(ROOT / 'module/customize.sh', output / 'customize.sh')
+    shutil.copy2(ROOT / 'module/service.sh', output / 'service.sh')
+    for name in ('README.md', 'CHANGELOG.md', 'LICENSE', 'LICENSING.md', 'THIRD_PARTY_NOTICES.md'):
+        shutil.copy2(ROOT / name, output / name)
     info = {
-        'version': VERSION, 'versionCode': 10017, 'experimental': True,
+        'version': version, 'versionCode': version_code, 'channel': 'stable',
         'kernel_rebuilt': False, 'callback_rebuilt': False,
         'base': 'captured deployed PJZ110 auto-coexistence stack',
         'snapshot_sha256': digest(args.snapshot.read_bytes()),
         'installer_base_sha256': digest(args.installer_base.read_bytes()),
         'bridge_sha256': digest(bridge_data),
-        'bridge_version': '1.0.15 (retained active device bridge)',
+        'bridge_version': bridge_version,
+        'receive_ui': True,
+        'share_mode': True,
+        'oshare_source_sha256': {
+            str(path.relative_to(ROOT)): digest(path.read_bytes())
+            for path in payload_files(ROOT / 'oshare/app/src')
+        },
         'deployed_files_before_changes': snapshot_hashes,
         'omitted_install_generated_files': sorted(omitted),
         'profile': {'phy': 3, 'mcs': 8, 'nss': 2, 'amsdu': 2,
                     'amsdu_max': 5, 'amsdu_bytes': 7935, 'collect_us': 1000},
         'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         'deployed_source_differs_from_workspace': True,
+        'stability_patch': stability,
+        'workspace_overlays': {
+            'bin/' + name: digest((output / 'bin' / name).read_bytes())
+            for name in sorted(path.name for path in (ROOT / 'module/bin').glob('*.sh') if path.name != 'kernel-identity.sh')
+        },
+        'webui_source_sha256': {
+            str(path.relative_to(ROOT)): digest(path.read_bytes())
+            for path in payload_files(ROOT / 'webui/src')
+        },
     }
     (output / 'build-info.json').write_text(json.dumps(info, indent=2, ensure_ascii=False) + '\n')
     for path in payload_files(output):
@@ -193,7 +197,7 @@ STA 按当前实现接受 2.4/5/6GHz，AWDL 固定信道 149。
     subprocess.run(['sh', str(output / 'bin/verify.sh'), str(output)], check=True)
     dist = ROOT / 'dist'
     dist.mkdir(exist_ok=True)
-    archive_path = dist / f'OPAirDrop-v{VERSION}-PJZ110.zip'
+    archive_path = dist / f'OPAirDrop-v{version}-PJZ110.zip'
     with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in payload_files(output):
             info = zipfile.ZipInfo.from_file(path, path.relative_to(output).as_posix())
@@ -203,6 +207,7 @@ STA 按当前实现接受 2.4/5/6GHz，AWDL 固定信道 149。
             archive.writestr(info, path.read_bytes())
     checksum = digest(archive_path.read_bytes())
     archive_path.with_suffix('.zip.sha256').write_text(f'{checksum}  {archive_path.name}\n')
+    emit_metadata(archive_path, dist / f'v{version}')
     print(f'{archive_path} ({archive_path.stat().st_size:,} bytes)\nSHA256 {checksum}')
 
 

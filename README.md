@@ -11,9 +11,9 @@
 - **系统分享入口**：连接 OShare 与 Mosey provider，映射设备名称、设备类型、发送进度和取消事件。
 - **接收 AirDrop**：OShare 原生 COUI 邀请、进度、拒绝 / 取消与完成文件入口；模块与共存开启后持续后台可见，不依赖打开分享页面或 OShare 的可见性时限，每次接收手动确认。
 - **AWDL 无线适配**：通过 Wonder、独立 provider 和 WLAN 驱动覆盖层连接协议服务与无线数据路径。
-- **会话管理**：驱动与原生服务驻留，共存开启时自动保持后台接收；关闭共存后按分享界面与活动传输管理无线会话。
-- **Wi-Fi 共存**：按当前 STA 频率选择同信道或跨 5 GHz 信道策略，并在会话结束后恢复参数。
-- **模块 WebUI**：Vue 3 + miuix-vue，包含服务状态、共存开关、后台速度记录、日志查看和导出。
+- **会话管理**：驱动与原生服务驻留，共存开启时自动保持后台接收；按分享模式和活动传输管理无线会话。
+- **Wi-Fi 共存**：按当前 Wi-Fi 连接选择共存策略，AWDL 固定信道 149；各频段沿用所选性能配置，始终开启，无需手动开关。
+- **模块 WebUI**：Vue 3 + miuix-vue，包含服务状态、分享入口设置、后台速度记录、日志查看和导出。
 
 ## 适配基线
 
@@ -24,7 +24,7 @@
 | 内核 | `6.6.118-android15-8-g9bc34d5b0c79-abogki537459655-4k` |
 | WLAN 平台 | Qualcomm `sun` / `peach-v2` |
 | AWDL | 信道 149，5745 MHz，20 MHz 带宽 |
-| 共存 STA 频率 | 5200 MHz（信道 40）、5745 MHz（信道 149） |
+| 共存 STA 频段 | 2.4 / 5 / 6 GHz，按连接条件选择策略 |
 | 模块环境 | KernelSU + 元模块（不限定具体实现） |
 | OShare 桥接 | LSPosed，作用域为 OShare 与 Mosey |
 
@@ -61,6 +61,7 @@ npm run build
 cd ..
 
 python3 tests/test_settings.py
+python3 tests/test_share_mode.py
 python3 tests/test_history.py
 node tests/test-api.mjs
 sh oshare/tests/run.sh
@@ -73,7 +74,7 @@ sh oshare/tests/run.sh
 完成模块装配与安装后：
 
 1. OPAirDrop 安装时会检测 LSPosed，自动安装、启用随包附带的 OShare 桥接，并为主用户添加 `com.coloros.oshare` 和 `com.google.android.mosey` 作用域。安装后重启一次。未检测到 LSPosed 时跳过桥接安装；安装 LSPosed 后重新安装本模块。
-2. 将手机连接到上表中的 Wi-Fi 信道，在文件管理器或相册中选择文件并打开系统互传界面。
+2. 将手机连接 Wi-Fi，在文件管理器或相册中选择文件，并打开所选的分享入口。
 3. 在 Apple 设备上打开 AirDrop 可见性，在分享列表中选择设备并完成接收确认。
 4. 从 KernelSU 的模块 WebUI 查看服务状态、速度历史和共存设置。
 
@@ -89,6 +90,18 @@ sh oshare/tests/run.sh
 
 接收确认与文件打开继续使用带会话标识的弹窗：当前原生模板的接受／拒绝按钮没有任务实例参数。该版本保留模板及签名，不运行原互传协议控制器。支持条件及回退行为见 [接入说明](docs/OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。
 
+### AirDrop 分享入口（1.0.24）
+
+WebUI → 设置 → AirDrop 分享入口可选择 Quick Share、OShare 或二者共存，默认二者共存。无需重启手机。空闲时自动切换，正在传输或保存文件时等待任务完成后切换；页面显示当前入口及等待中的选择。
+
+- **Quick Share**：由 Google Quick Share 管理 AirDrop 发送与接收，模块不再注入 OShare 的 AirDrop 设备列表，也不启动 OShare 后台接收宿主。WebUI 的名称和保存位置由 Quick Share 自行管理。
+- **OShare**：由系统互传管理 AirDrop 发送、接收、名称及保存位置；桥接限制来自 Quick Share 的 Mosey AirDrop 操作。
+- **二者共存**：两个入口都可发送，保留共享发现与设备回放；模块的持续后台 AirDrop 接收由 OShare 展示。
+
+该选项只控制 AirDrop 入口，不停用 GMS 或 OShare 整个应用，也不关闭普通 Android / Windows Quick Share 分享。OShare 与二者共存模式需要 LSPosed 桥接；Quick Share 自身的 AirDrop 可用性仍取决于 GMS / Mosey 支持。当前完成主机回归与桥接编译，三种模式切换后的实机发现和双向收发仍待验证。桥接和模块脚本必须配套更新。
+
+配置保存在 Settings.Global 的 `opairshare_share_mode`；后台监督器在原会话空闲并释放后更新 `debug.opairshare.share_mode`；切换过程关闭新任务准入，已有任务继续完成。
+
 ### AirDrop 显示名称（1.0.6）
 
 WebUI → 设置 → AirDrop 名称可保存自定义名称或恢复默认。默认读取 `ro.vendor.oplus.market.enname`，属性为空时回退到 `ro.product.model`；名称支持最多 64 个字符，保存在系统全局设置中，重启和模块升级后保留。留空或选择“恢复默认”会重新跟随默认属性值。
@@ -97,7 +110,9 @@ WebUI → 设置 → AirDrop 名称可保存自定义名称或恢复默认。默
 
 ### 接收 AirDrop（1.0.11）
 
-开启模块服务及 Wi-Fi 共存，连接受支持的 40 / 149 信道后，AirDrop 会自动保持后台可见，无需打开 OShare / Quick Share；独立于系统互传的接收开关和十分钟时限。Apple 设备选中手机后，在 OShare 弹窗中手动接受。关闭模块或 Wi-Fi 共存后停止新邀请，正在传输或保存的任务继续完成；空闲后台会话可直接在 WebUI 关闭共存。
+开启模块服务及 Wi-Fi 共存，在 OShare 或二者共存模式下，AirDrop 会自动保持后台可见，无需打开分享页面；独立于系统互传的接收开关和十分钟时限。Apple 设备选中手机后，在 OShare 弹窗中手动接受。关闭模块后停止新邀请，正在传输或保存的任务继续完成。
+
+发行包保留自动共存策略，按 Wi-Fi 的 2.4 / 5 / 6 GHz 连接条件选择会话，AWDL 保持信道 149，各频段沿用所选发送性能配置。网络变化时按任务状态释放和重建会话；Wi-Fi 共存始终开启；旧版本的关闭和严格同信道设置会自动迁移。
 
 此模式不校验 Apple 联系人身份，附近的 Apple 设备均可发起邀请。普通文件保存到 `Download/OPAirShare`，图片和视频分别发布到 `Pictures/OPAirShare`、`Movies/OPAirShare`。当前已在 PJZ110 上验证 Mac 发送文本文件、OShare 接收确认、保存与 SHA256 一致；其他类型、多文件、大文件、锁屏和异常恢复尚待真机覆盖。
 
