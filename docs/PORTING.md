@@ -178,7 +178,8 @@ OShare 桥接还需要对应宿主 provider 的类型、方法、回调和设备
 
 | 位置 | 需要对应目标设备的内容 |
 | --- | --- |
-| `module/customize.sh` | 型号、SDK、内核版本、模块环境、文件权限 |
+| `module/customize.sh` | 调用兼容性检测、模块环境、文件权限 |
+| `module/bin/compatibility.sh` | Oplus 品牌、sun 平台、6.6.118 内核基础版本三项设备准入条件 |
 | `module/bin/control.sh` | 加载顺序、模块名、`/proc/modules` 条件、HAL 服务和恢复路径 |
 | `module/bin/common.sh` | 模块参数、服务名与状态检查 |
 | `module/bin/kernel-identity.sh` | 本次构建与原厂恢复模块的构建标识 |

@@ -111,7 +111,8 @@ def main():
     copy_tree(ROOT / 'third-party/unlock-cn-gms', output / 'third-party/unlock-cn-gms')
     (output / 'README.md').write_text(
         f'# OPAirDrop {props["version"]}\n\n{props["description"]}\n\n'
-        '适配：PJZ110 / SDK37 / 6.6.118-android15-8-g9bc34d5b0c79-abogki537459655-4k。\n\n'
+        '设备准入：Oplus 品牌 / sun 平台 / 6.6.118 内核基础版本，允许不同构建后缀。'
+        '不限制型号、SDK、SoC 属性及原厂驱动身份。已验证机型 PJZ110；其他机型仍需实际收发验证。\n\n'
         '需要 KernelSU 与元模块，不限定具体元模块实现。安装时检测 LSPosed，自动安装并启用 OShare，'
         '配置 OShare 与 Mosey 的主用户作用域。安装后重启一次。恢复环境安装或 LSPosed 尚未初始化时，'
         '开机后自动重试；若开机后才完成激活，需要再次重启。无 LSPosed 时会跳过桥接安装。\n\n'

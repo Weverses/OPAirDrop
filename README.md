@@ -19,16 +19,18 @@
 
 | 项目 | 当前配置 |
 | --- | --- |
-| 设备型号 | PJZ110 |
-| Android SDK | 37 |
-| 内核 | `6.6.118-android15-8-g9bc34d5b0c79-abogki537459655-4k` |
+| 设备范围 | Oplus（OPPO / OnePlus / realme）`sun` 平台；已验证机型 PJZ110 |
+| Android SDK | 已验证 37，不作为安装限制 |
+| 内核 | `6.6.118`，允许不同构建后缀 |
 | WLAN 平台 | Qualcomm `sun` / `peach-v2` |
 | AWDL | 信道 149，5745 MHz，20 MHz 带宽 |
 | 共存 STA 频段 | 2.4 / 5 / 6 GHz，按连接条件选择策略 |
 | 模块环境 | KernelSU + 元模块（不限定具体实现） |
 | OShare 桥接 | LSPosed，作用域为 OShare 与 Mosey |
 
-设备型号、SDK 和内核匹配规则位于 `module/customize.sh` 与 `module/bin/control.sh`。其他设备的适配从内核源码、驱动 ABI 和系统分享服务版本开始。
+安装和启动共用 `module/bin/compatibility.sh`，设备准入只检查三项：Oplus 品牌、`ro.board.platform=sun`、内核基础版本 `6.6.118`（接受 `6.6.118`、`6.6.118-*` 和 `6.6.118+*`）。不限制型号、SoC 属性、SDK、内核构建后缀或原厂驱动构建身份。KernelSU、元模块和包完整性检查仍是模块运行与安装要求。
+
+模块自身已加载的修改版驱动与 provider / Wonder 继续校验身份，用于识别本模块拥有的运行状态。原厂驱动不再按 PJZ110 的构建身份或模块大小拦截，实际加载结果由内核决定。通过三项检测不代表所有固件、OShare / Mosey 版本或实际收发已验证。
 
 ## 项目结构
 

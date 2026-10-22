@@ -1,15 +1,15 @@
 #!/system/bin/sh
-# PJZ110 stage23 data path + stage24 lifecycle; original CNSS always retained.
+# Compatible Oplus SM8750 data path; original CNSS always retained.
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
 . "$MODDIR/bin/kernel-identity.sh"
+. "$MODDIR/bin/compatibility.sh"
 init_state
 . "$MODDIR/bin/transfer-power.sh"
 preflight() {
-    [ "$(id -u)" = 0 ] && [ "$(getprop ro.product.model)" = PJZ110 ] || return 2
-    [ "$(getprop ro.build.version.sdk)" = 37 ] || return 2
-    [ "$(uname -r)" = '6.6.118-android15-8-g9bc34d5b0c79-abogki537459655-4k' ] || return 2
+    [ "$(id -u)" = 0 ] || return 2
+    compatibility_device
 }
 lock_stack() {
     exec 9> "$STATE/stack.flock"
@@ -138,14 +138,8 @@ stop_native() {
 restore_state_allowed() {
     if loaded wonder; then [ "$(module_note wonder)" = "$NOTE_wonder" ] || return 3; fi
     if loaded opairshare_wonder_provider; then [ "$(module_note opairshare_wonder_provider)" = "$NOTE_opairshare_wonder_provider" ] || return 3; fi
-    if loaded qca_cld3_peach_v2; then
-        note=$(module_note qca_cld3_peach_v2)
-        [ "$note" = "$NOTE_qca_cld3_peach_v2" ] || [ "$note" = "$STOCK_NOTE_qca_cld3_peach_v2" ] || return 3
-    fi
-    if loaded mac80211; then
-        note=$(module_note mac80211)
-        [ "$note" = "$NOTE_mac80211" ] || [ "$note" = "$STOCK_NOTE_mac80211" ] || return 3
-    fi
+    # Original WLAN/mac80211 builds vary across supported sun devices.
+    # Keep ownership checks for our provider/Wonder; let insmod validate ABI.
 }
 restore_owned() {
     restore_state_allowed || return 3
@@ -163,7 +157,7 @@ restore_owned() {
         fi
         if loaded opairshare_wonder_provider; then rmmod opairshare_wonder_provider || return 12; fi
         if ! loaded qca_cld3_peach_v2; then insmod /vendor/lib/modules/qca_cld3_peach_v2.ko || return 13; fi
-        [ "$(module_note qca_cld3_peach_v2)" = "$STOCK_NOTE_qca_cld3_peach_v2" ] || return 13
+        loaded qca_cld3_peach_v2 || return 13
         rm -f "$STATE/qca-swapped" "$STATE/provider-added"
     elif same_boot "$STATE/provider-added"; then
         if loaded opairshare_wonder_provider; then rmmod opairshare_wonder_provider || return 12; fi
@@ -172,7 +166,7 @@ restore_owned() {
     if same_boot "$STATE/mac-swapped"; then
         if loaded mac80211 && [ "$(module_note mac80211)" = "$NOTE_mac80211" ]; then rmmod mac80211 || return 14; fi
         if ! loaded mac80211; then insmod /vendor/lib/modules/mac80211.ko || return 15; fi
-        [ "$(module_note mac80211)" = "$STOCK_NOTE_mac80211" ] || return 15
+        loaded mac80211 || return 15
         rm -f "$STATE/mac-swapped"
     fi
     resume_wifi_hal || return 4
@@ -257,11 +251,6 @@ case "${1:-status}" in
             if loaded "$m"; then echo "Unexpected live module $m"; exit 3; fi
         done
         [ -z "$(pidof mosey_server || true)" ] || { echo 'Existing native server; use explicit adopt only for verified state'; exit 3; }
-        grep -q '^qca_cld3_peach_v2 12365824 ' /proc/modules || exit 3
-        grep -q '^mac80211 1093632 0 ' /proc/modules || exit 3
-        [ "$(module_note qca_cld3_peach_v2)" = "$STOCK_NOTE_qca_cld3_peach_v2" ] || exit 3
-        [ "$(module_note mac80211)" = "$STOCK_NOTE_mac80211" ] || exit 3
-        loaded cnss2 || exit 3
         wifi_before=$(wifi_startup_state)
         case "$wifi_before" in 0|1) ;; *) echo 'Invalid Wi-Fi state'; exit 3;; esac
         printf '%s\n' "$wifi_before" > "$STATE/wifi-before"

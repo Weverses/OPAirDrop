@@ -39,7 +39,7 @@ flowchart TD
 
 启动流程：
 
-1. 读取设备型号、SDK、内核版本、运行文件与原版 APK 版本。
+1. 共用安装器的设备准入检测，只核对 Oplus 品牌、sun 平台与 6.6.118 内核基础版本，允许不同构建后缀；不限制型号、SDK、SoC 属性或原厂驱动身份。继续检查运行文件与原版 APK 版本。
 2. 获取 `stack.flock`，记录本次启动的 boot ID 与 Wi-Fi 状态。
 3. 暂停 Wi-Fi HAL，切换 WLAN 模块并加载独立 provider。
 4. 恢复 HAL 与 Wi-Fi 状态，加载匹配的 `mac80211` 和 Wonder。
