@@ -5,6 +5,7 @@ MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
 . "$MODDIR/bin/kernel-identity.sh"
 init_state
+. "$MODDIR/bin/transfer-power.sh"
 preflight() {
     [ "$(id -u)" = 0 ] && [ "$(getprop ro.product.model)" = PJZ110 ] || return 2
     [ "$(getprop ro.build.version.sdk)" = 37 ] || return 2
@@ -60,6 +61,7 @@ resume_wifi_hal() {
     fi
 }
 restore_session_wifi() {
+    performance_restore
     if [ -e "$STATE/session-wifi" ]; then
         CLASSPATH="$MODDIR/payload/native/session-wifi.jar" /system/bin/timeout -k 2 18 /system/bin/app_process /system/bin OPAirShareSessionWifi restore "$STATE/session-wifi" || return 8
     fi
@@ -101,7 +103,8 @@ start_native() {
     touch /apex/apex-info-list.xml
     OPAIRSHARE_ENABLE_HOPPING=1 OPAIRSHARE_SOCIAL_CHANNELS=149 \
         OPAIRSHARE_CONFIG_TRACE="$STATE/config-trace.log" \
-        LD_PRELOAD="$MODDIR/payload/native/libopairshare_capability.so:$MODDIR/payload/native/libopairshare_config.so" \
+        OPAIRSHARE_CHANNEL_PROFILE=freq20 \
+        LD_PRELOAD="$MODDIR/payload/native/libopairshare_capability.so:$MODDIR/payload/native/libopairshare_config.so:$MODDIR/payload/native/libopairshare_channel.so" \
         /system_ext/bin/mosey_server >> "$STATE/server.log" 2>&1 < /dev/null 9>&- &
     server=$!
     echo "$server" > "$STATE/server.pid"
@@ -273,7 +276,8 @@ case "${1:-status}" in
         framework svc wifi disable
         wifi_wait 0
         startup_trace WIFI_STOP_CONFIRMED
-        sleep 6
+        # Disable completion and HAL stop gate teardown. A fixed delay here
+        # does not drain the remaining HAL-owned interfaces; stopping HAL does.
         pause_wifi_hal
         rmmod qca_cld3_peach_v2
         boot_id > "$STATE/qca-swapped"

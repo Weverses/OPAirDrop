@@ -133,6 +133,10 @@ def main():
     stability = patcher.write_patch(captured / 'system/system_ext/lib64/libmosey_daemon_ffi.so', library)
     shutil.move(library.with_suffix('.so.peer-grace.json'), output / 'mosey-peer-grace.json')
     overlay_sources(output)
+    # Only the measured SET_FREQUENCY adapter is new; retain the captured driver
+    # and other native helpers rather than shipping experimental kernel payloads.
+    channel = ROOT / 'build/native/libopairshare_channel.so'
+    shutil.copy2(channel, output / 'payload/native' / channel.name)
 
     # Check all module payloads against the build identities expected by boot.
     for line in (output / 'bin/kernel-identity.sh').read_text().splitlines():
@@ -176,6 +180,20 @@ def main():
         'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
         'deployed_source_differs_from_workspace': True,
         'stability_patch': stability,
+        'channel_setup': {
+            'profile': 'freq20', 'frequency_mhz': 5745,
+            'set_frequency_bandwidth_enum': '2->0',
+            'set_fixed_tx_rate_unchanged': True,
+            'sta_power_save_unchanged': False,
+            'sta_power_save_policy': 'off_during_transfer_all_channels_restore_previous',
+            'ack_filter_enabled': False,
+            'experimental_phy_driver': False,
+            'library_sha256': digest(channel.read_bytes()),
+            'source_sha256': {
+                name: digest((ROOT / name).read_bytes())
+                for name in ('native/channel.c', 'native/channel.map')
+            },
+        },
         'workspace_overlays': {
             'bin/' + name: digest((output / 'bin' / name).read_bytes())
             for name in sorted(path.name for path in (ROOT / 'module/bin').glob('*.sh') if path.name != 'kernel-identity.sh')

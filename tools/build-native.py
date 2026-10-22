@@ -32,7 +32,8 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     source = ROOT / 'native'
     common = [str(clang), '-O2', '-Wall', '-Wextra', '-Werror']
-    for name, libs in [('capability', ['-lbinder_ndk', '-ldl']), ('config', ['-llog', '-ldl'])]:
+    for name, libs in [('capability', ['-lbinder_ndk', '-ldl']), ('config', ['-llog', '-ldl']),
+                       ('channel', ['-llog', '-ldl'])]:
         subprocess.run(common + ['-std=c11', '-shared', '-fPIC', str(source / (name + '.c')),
                        '-Wl,--version-script=' + str(source / (name + '.map')), '-Wl,--no-undefined',
                        '-o', str(out / ('libopairshare_' + name + '.so'))] + libs, check=True)
@@ -50,6 +51,7 @@ def main():
                     *map(str, classes.rglob('*.class'))], check=True)
     subprocess.run(['jar', 'cf', str(out / 'session-wifi.jar'), '-C', str(dex), 'classes.dex'], check=True)
     files = [out / name for name in ('libopairshare_capability.so', 'libopairshare_config.so',
+                                    'libopairshare_channel.so',
                                     'opairshare-socket-buffer', 'session-wifi.jar')]
     record = {p.name: {'sha256': hashlib.sha256(p.read_bytes()).hexdigest(), 'bytes': p.stat().st_size}
               for p in files}

@@ -71,7 +71,8 @@ def main():
         shutil.copy2(source, output / name)
     native = output / 'payload/native'
     native.mkdir(parents=True, exist_ok=True)
-    for name in ('libopairshare_capability.so', 'libopairshare_config.so', 'opairshare-socket-buffer', 'session-wifi.jar'):
+    for name in ('libopairshare_capability.so', 'libopairshare_config.so', 'libopairshare_channel.so',
+                 'opairshare-socket-buffer', 'session-wifi.jar'):
         shutil.copy2(ROOT / 'build/native' / name, native / name)
     shutil.copy2(ROOT / 'build/lsposed/lsposed-setup.jar', native / 'lsposed-setup.jar')
     companion = output / 'companion/OShareAirDrop.apk'

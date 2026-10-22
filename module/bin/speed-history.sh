@@ -4,6 +4,7 @@ set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
 init_state
+. "$MODDIR/bin/transfer-power.sh"
 D="$STATE/speed-history"
 mkdir -p "$D";chmod 700 "$D"
 IFACE=/sys/class/net/mosey0
@@ -67,13 +68,13 @@ run(){
     exec 5> "$D/worker.flock";flock -n 5 5>&5 || exit 0
     echo "$$" > "$D/pid"
     idx=0;previous=0;prev_tx=0;prev_rx=0;rate_tx=0;rate_rx=0;transfer_check=0;provider_state=unknown;awaiting=off
-    cleanup(){ trap - EXIT INT TERM;flush;rate_tx=0;rate_rx=0;waiting;[ "$(cat "$D/pid" 2>/dev/null || true)" != "$$" ] || rm -f "$D/pid"; }
+    cleanup(){ trap - EXIT INT TERM;performance_restore;flush;rate_tx=0;rate_rx=0;waiting;[ "$(cat "$D/pid" 2>/dev/null || true)" != "$$" ] || rm -f "$D/pid"; }
     trap cleanup EXIT
     trap 'exit 0' INT TERM
     while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] && [ ! -e "$MODDIR/disable" ] && [ ! -e "$MODDIR/remove" ];do
         t=$(now_ms)
         if [ ! -r "$IFACE/statistics/tx_bytes" ] || [ ! -r "$IFACE/statistics/rx_bytes" ];then
-            flush;rate_tx=0;rate_rx=0;waiting;idx=0;previous=0;provider_state=unknown;transfer_check=0;awaiting=off;sleep 0.5;continue
+            performance_restore;flush;rate_tx=0;rate_rx=0;waiting;idx=0;previous=0;provider_state=unknown;transfer_check=0;awaiting=off;sleep 0.5;continue
         fi
         next_idx=$(cat "$IFACE/ifindex" 2>/dev/null || echo 0)
         tx=$(cat "$IFACE/statistics/tx_bytes" 2>/dev/null || echo 0)
@@ -88,6 +89,7 @@ run(){
         if [ $((t-transfer_check)) -ge 1000 ];then
             transfer_check=$t
             transfer_state
+            performance_tick "$provider_state"
         fi
         if [ "$provider_state" = pending ];then
             if [ "$confirmed" = on ];then flush;else reset_record;fi
