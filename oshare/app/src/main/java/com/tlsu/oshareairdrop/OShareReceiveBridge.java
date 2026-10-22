@@ -51,7 +51,7 @@ public final class OShareReceiveBridge {
     }, () -> server != null && server.getBinder().isBinderAlive(), OShareReceiveBridge::connectBackground);
     private static WeakReference<Activity> visible = new WeakReference<>(null);
     private static boolean installed;
-    private static OShareNativeReceivePresenter nativePresenter;
+    private static OShareNativeTransferPresenter nativePresenter;
     private static String launching = "";
     private static int nextNotification = 10000;
 
@@ -144,8 +144,8 @@ public final class OShareReceiveBridge {
             // SDK binding and UPK reads must not delay the existing receiver handshake.
             java.util.concurrent.Executors.newSingleThreadExecutor(action -> new Thread(action, "OShare-SeedlingInit"))
                     .execute(() -> {
-                OShareNativeReceivePresenter prepared = OShareNativeReceivePresenter.install(owner, app, loader,
-                    new OShareNativeReceivePresenter.Host() {
+                OShareNativeTransferPresenter prepared = OShareNativeTransferPresenter.install(owner, app, loader,
+                    new OShareNativeTransferPresenter.Host() {
                         @Override public void changed(String session) { nativePresentationChanged(session); }
                         @Override public void open(String session) { openSession(session); }
                         @Override public boolean command(String session, String action) {

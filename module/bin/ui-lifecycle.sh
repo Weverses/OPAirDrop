@@ -43,7 +43,7 @@ foreground_state() {
     resumed=$(grep -E 'topResumedActivity=|mResumedActivity:|ResumedActivity:' "$activities_file" || true)
     if [ -z "$resumed" ];then echo unknown;return;fi
     if { [ "$SHARE_MODE" != oshare ] && printf '%s\n' "$resumed" | grep -Eq 'com\.google\.android\.gms/[^ ]*nearby\.sharing\.'; } ||
-       { [ "$SHARE_MODE" != quickshare ] && printf '%s\n' "$resumed" | grep -Eq 'com\.coloros\.oshare/(\.ui\.ShareActivity|com\.(oplus|coloros)\.oshare\.ui\.ShareActivity)'; }; then
+       { [ "$SHARE_MODE" != quickshare ] && printf '%s\n' "$resumed" | grep -Eq '(com\.coloros\.oshare/(\.ui\.ShareActivity|com\.(oplus|coloros)\.oshare\.ui\.ShareActivity)|com\.android\.intentresolver/(\.ChooserActivity(Launcher)?|com\.android\.intentresolver\.ChooserActivity(Launcher)?))([ }]|$)'; }; then
         echo open;return
     fi
     if [ "$SHARE_MODE" != oshare ] && [ -e "$STATE/ui-session" ] &&

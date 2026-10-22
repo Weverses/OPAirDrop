@@ -18,10 +18,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Uses the installed, signed OShare templates and SDK; owns no native transfer singleton. */
-final class OShareNativeReceivePresenter {
+/** Shared sender/receiver SDK lifecycle; each direction owns a disjoint instance namespace. */
+final class OShareNativeTransferPresenter {
     private static final String ACTION = "pantanal.intent.business.app.system.OSHARE_USER_CONFIRM";
     private static final String PREFIX = "opairshare-";
+    private static final String SEND_PREFIX = "opairshare-send-";
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     interface Host {
         void changed(String session);
@@ -32,6 +33,7 @@ final class OShareNativeReceivePresenter {
     private final Entry module;
     private final OShareSeedlingResolver.Roles roles;
     private final Host host;
+    private final boolean outgoing;
     private final Map<String, Card> sessions = new LinkedHashMap<>(); // main thread only
     private final ConcurrentHashMap<String, Card> instances = new ConcurrentHashMap<>();
     private final ArrayList<HookHandle> hooks = new ArrayList<>();
@@ -50,34 +52,53 @@ final class OShareNativeReceivePresenter {
         volatile boolean failed, ended, visible;
         boolean verified;
         String fingerprint = "";
-        Card(String session, String scene, int notification) {
+        Card(String session, String scene, int notification, String prefix) {
             this.session = session; this.scene = scene; this.notification = notification;
-            this.instance = PREFIX + UUID.randomUUID();
+            this.instance = prefix + UUID.randomUUID();
         }
     }
 
-    static OShareNativeReceivePresenter install(Entry module, Context context, ClassLoader loader, Host host) {
-        OShareNativeReceivePresenter presenter = null;
+    static OShareNativeTransferPresenter install(Entry module, Context context, ClassLoader loader, Host host) {
+        return install(module, context, loader, host, false);
+    }
+
+    static OShareNativeTransferPresenter installSending(Entry module, Context context, ClassLoader loader, Host host) {
+        return install(module, context, loader, host, true);
+    }
+
+    private static OShareNativeTransferPresenter install(Entry module, Context context, ClassLoader loader, Host host, boolean outgoing) {
+        OShareNativeTransferPresenter presenter = null;
         try {
-            OShareSeedlingAssets.prepare(context);
-            if (!OShareSeedlingAssets.ready() || !OShareSeedlingAssets.scopedCancel()) throw new IllegalStateException("native receive template unavailable");
-            presenter = new OShareNativeReceivePresenter(module, context,
-                    OShareSeedlingResolver.resolve(module, context, loader), host);
+            if (outgoing) {
+                if (!OShareSendingAssets.prepare(context)) throw new IllegalStateException("native sender template unavailable");
+            } else {
+                OShareSeedlingAssets.prepare(context);
+                if (!OShareSeedlingAssets.ready() || !OShareSeedlingAssets.scopedCancel()) throw new IllegalStateException("native receive template unavailable");
+            }
+            presenter = new OShareNativeTransferPresenter(module, context,
+                    OShareSeedlingResolver.resolve(module, context, loader), host, outgoing);
             presenter.installHooks();
-            module.log(Log.INFO, Entry.TAG, "Native OShare Seedling receive presentation installed");
+            module.log(Log.INFO, Entry.TAG, "Native OShare Seedling presentation installed outgoing=" + outgoing);
             return presenter;
         } catch (Throwable failure) {
             if (presenter != null) for (HookHandle hook : presenter.hooks)
                 try { hook.unhook(); } catch (Throwable ignored) {}
-            module.log(Log.WARN, Entry.TAG, "Native receive presentation unavailable; using dialog", failure);
+            module.log(Log.WARN, Entry.TAG, "Native presentation unavailable outgoing=" + outgoing, failure);
             return null;
         }
     }
 
-    private OShareNativeReceivePresenter(Entry module, Context context,
-            OShareSeedlingResolver.Roles roles, Host host) {
-        this.module = module; this.context = context; this.roles = roles; this.host = host;
+    private OShareNativeTransferPresenter(Entry module, Context context,
+            OShareSeedlingResolver.Roles roles, Host host, boolean outgoing) {
+        this.module = module; this.context = context; this.roles = roles; this.host = host; this.outgoing = outgoing;
     }
+
+    private boolean owns(String id) {
+        return id != null && (outgoing ? id.startsWith(SEND_PREFIX)
+                : id.startsWith(PREFIX) && !id.startsWith(SEND_PREFIX));
+    }
+
+    private String action() { return outgoing ? OShareSendingAssets.ACTION : ACTION; }
 
     private void installHooks() {
         hooks.add(module.hook(roles.providerCall).intercept(chain -> {
@@ -85,7 +106,7 @@ final class OShareNativeReceivePresenter {
             String instance = bundle == null ? null : bundle.getString("instanceId");
             // Retired bridge IDs are consumed too: never reinterpret a delayed click
             // as an action on OShare's unrelated native transfer singleton.
-            if (instance == null || !instance.startsWith(PREFIX)) return chain.proceed();
+            if (!owns(instance)) return chain.proceed();
             if (trustedCaller()) {
                 String event = bundle.getString("event", "");
                 Card card = instances.get(instance);
@@ -97,7 +118,7 @@ final class OShareNativeReceivePresenter {
         hooks.add(module.hook(roles.providerUpdate).intercept(chain -> {
             Object nativeCard = chain.getArg(1);
             String id = roles.cardId(nativeCard);
-            if (id == null || !id.startsWith(PREFIX)) return chain.proceed();
+            if (!owns(id)) return chain.proceed();
             if (trustedCaller()) MAIN.post(() -> cardCreated(id, nativeCard, true));
             return null;
         }));
@@ -111,7 +132,7 @@ final class OShareNativeReceivePresenter {
         hooks.add(module.hook(method).intercept(chain -> {
             Object nativeCard = chain.getArg(1);
             String id = roles.cardId(nativeCard);
-            if (id == null || !id.startsWith(PREFIX)) return chain.proceed();
+            if (!owns(id)) return chain.proceed();
             if (trustedCaller()) MAIN.post(() -> {
                 Card card = instances.get(id);
                 if (card == null || card.ended) return;
@@ -149,7 +170,7 @@ final class OShareNativeReceivePresenter {
             Card card = previous;
             if (card == null || !card.scene.equals(scene)) {
                 if (card != null) end(card);
-                card = new Card(session, scene, notification);
+                card = new Card(session, scene, notification, outgoing ? SEND_PREFIX : PREFIX);
                 sessions.put(session, card); instances.put(card.instance, card);
                 prune();
             }
@@ -168,7 +189,7 @@ final class OShareNativeReceivePresenter {
         } catch (Throwable failure) {
             Card card = sessions.get(session);
             if (card != null) fail(card, failure);
-            else log("Native receive presentation failed", failure);
+            else log("Native transfer presentation failed", failure);
             return false;
         }
     }
@@ -191,9 +212,10 @@ final class OShareNativeReceivePresenter {
                 || (card.scene.equals("invite") && OShareSeedlingAssets.supportsScopedConfirm());
     }
 
-    private static String scene(JSONObject event) {
+    private String scene(JSONObject event) {
         String phase = event.optString("phase");
         if (event.optBoolean("terminal")) return "result";
+        if (outgoing) return phase.equals("cancelling") ? "cancelling" : "transfer";
         if (phase.equals("pending")) return "invite";
         if (phase.equals("receiving")) return "transfer";
         return "waiting";
@@ -203,11 +225,11 @@ final class OShareNativeReceivePresenter {
         // Start with no actionable controls. Only enable template interactions
         // after the host returns its UPK version and the exact instance identity.
         JSONObject bootstrap = data(card, title, summary, true);
-        Object intent = roles.newIntent(System.currentTimeMillis(), ACTION, true, null,
+        Object intent = roles.newIntent(System.currentTimeMillis(), action(), true, null,
                 new JSONObject().put("initData", bootstrap.toString()), card.options, card.instance);
         Object callback = CallbackFactory.create(roles.intentCallbackType.getClassLoader(),
                 roles.intentCallbackType.getName(), (method, args) -> {
-                    if (args == null || args.length < 3 || !ACTION.equals(String.valueOf(args[0]))) return null;
+                    if (args == null || args.length < 3 || !action().equals(String.valueOf(args[0]))) return null;
                     int flag = ((Number) args[1]).intValue();
                     boolean ok = method.equals("onIntentResult") ? Boolean.TRUE.equals(args[2])
                             : method.equals("onIntentResultCodeCallBack") && (((Number) args[2]).intValue() == 0 || ((Number) args[2]).intValue() == 2);
@@ -242,8 +264,8 @@ final class OShareNativeReceivePresenter {
             return;
         }
         try {
-            if (roles.cardUpkVersion(nativeCard) != OShareSeedlingAssets.versionCode())
-                throw new IllegalStateException("system receive template version differs from installed OShare");
+            if (roles.cardUpkVersion(nativeCard) != (outgoing ? OShareSendingAssets.versionCode() : OShareSeedlingAssets.versionCode()))
+                throw new IllegalStateException("system transfer template version differs from installed OShare");
             boolean first = !card.verified;
             card.nativeCard = nativeCard; card.verified = true;
             card.hosts.put(roles.widgetCode(nativeCard), nativeCard);
@@ -286,6 +308,7 @@ final class OShareNativeReceivePresenter {
     }
 
     private JSONObject data(Card card, String title, String summary, boolean bootstrap) throws Exception {
+        if (outgoing) return sendingData(card, title, summary, bootstrap);
         JSONObject data = OShareSeedlingAssets.data();
         JSONObject event = card.snapshot;
         boolean terminal = event.optBoolean("terminal");
@@ -313,11 +336,35 @@ final class OShareNativeReceivePresenter {
         return data;
     }
 
+    private JSONObject sendingData(Card card, String title, String summary, boolean bootstrap) throws Exception {
+        JSONObject event = card.snapshot;
+        boolean terminal = event.optBoolean("terminal");
+        boolean success = terminal && event.optInt("status") == 1006;
+        boolean active = !bootstrap && !terminal && !card.scene.equals("cancelling");
+        String state = success ? "success" : "fail";
+        return OShareSendingAssets.data().put("instanceId", card.instance)
+                .put("send_capsule_title", event.optString("capsule"))
+                .put("send_panel_title", title).put("send_assist_text", summary)
+                .put("progress", Math.max(0, Math.min(100, event.optInt("progress"))))
+                .put("cancel_text", "取消").put("isShowBtn", false).put("isE4Show", false)
+                .put("isShowProcess", active).put("isShowLottie", !bootstrap && terminal)
+                .put("isB0Show", true).put("showB", false).put("playLottie", true)
+                .put("icon_logo_d1", "{{$r('images.logo_d1')}}")
+                .put("icon_process_d", "{{$r('images.cancel')}}")
+                .put("state_capsule", "{{$r('lotties." + state + "_capsule')}}")
+                .put("state", "{{$r('lotties." + state + "')}}")
+                .put("repeat", terminal ? 0 : -1).put("stop", false);
+    }
+
     private void handleAction(Card card, String event) {
         if (card == null || card.ended || card.failed || !card.verified || !card.visible
                 || sessions.get(card.session) != card) return;
         android.app.KeyguardManager keyguard = context.getSystemService(android.app.KeyguardManager.class);
         if (keyguard == null || keyguard.isKeyguardLocked()) { host.open(card.session); return; }
+        if (outgoing) {
+            if (event.equals("cancelTask") && card.scene.equals("transfer")) host.command(card.session, "cancel");
+            return;
+        }
         if (event.equals("cancel") && OShareSeedlingAssets.scopedCancel()) {
             if (card.scene.equals("transfer")) host.command(card.session, "cancel_incoming");
             else host.open(card.session);
@@ -331,7 +378,7 @@ final class OShareNativeReceivePresenter {
 
     private void fail(Card card, Throwable failure) {
         if (card.failed || card.ended) return;
-        card.failed = true; log("Native receive card fallback", failure); endAndNotify(card);
+        card.failed = true; log("Native transfer card fallback", failure); endAndNotify(card);
     }
 
     private void endAndNotify(Card card) { end(card); host.changed(card.session); }
@@ -354,14 +401,14 @@ final class OShareNativeReceivePresenter {
     private void sendEnd(String instance, int attempt) {
         SDK_WORKER.execute(() -> {
             try {
-                Object end = roles.newIntent(System.currentTimeMillis(), ACTION, false, null, null, null, instance);
+                Object end = roles.newIntent(System.currentTimeMillis(), action(), false, null, null, null, instance);
                 Object transportResult = roles.sendSeedling.invoke(roles.sdk, context, end, null);
                 // END has the same transport contract; retry only real invocation
                 // failures, never an undocumented nonzero transport reply.
                 module.log(Log.INFO, Entry.TAG, "SEEDLING_END_SUBMITTED transport=" + transportResult
                         + " instance=" + instance);
             } catch (Throwable failure) {
-                log("Native receive card END failed", failure);
+                log("Native transfer card END failed", failure);
                 if (attempt < 2) MAIN.postDelayed(() -> sendEnd(instance, attempt + 1), 1500L * (attempt + 1));
             }
         });
@@ -372,7 +419,7 @@ final class OShareNativeReceivePresenter {
         java.util.Iterator<Map.Entry<String, Card>> it = sessions.entrySet().iterator();
         while (sessions.size() > 64 && it.hasNext()) {
             Card card = it.next().getValue();
-            if (card.snapshot != null && card.snapshot.optBoolean("terminal")) { end(card); it.remove(); }
+            if (card.ended || (card.snapshot != null && card.snapshot.optBoolean("terminal"))) { end(card); it.remove(); }
         }
     }
 

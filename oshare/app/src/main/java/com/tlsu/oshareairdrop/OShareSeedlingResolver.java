@@ -54,7 +54,7 @@ public final class OShareSeedlingResolver {
         return descriptors;
     }
 
-    public static Roles resolve(Entry module, Context context, ClassLoader loader) throws Exception {
+    public static synchronized Roles resolve(Entry module, Context context, ClassLoader loader) throws Exception {
         ApplicationInfo app = context.getApplicationInfo();
         List<String> paths = new ArrayList<>();
         paths.add(app.sourceDir);

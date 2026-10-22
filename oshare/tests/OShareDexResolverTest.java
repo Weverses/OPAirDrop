@@ -28,9 +28,14 @@ public final class OShareDexResolverTest {
                 return;
             }
             Map<String, String> roles = OShareDexResolver.resolve(dex);
+            Map<String, String> chooserRoles = OShareChooserResolver.scan(dex, roles);
+            check(chooserRoles.size() == 6, "missing chooser roles: " + chooserRoles);
+            chooserRoles.forEach((key, value) -> System.out.println("chooser." + key + "=" + value));
             roles.forEach((key, value) -> System.out.println(key + "=" + value));
             check(roles.size() == 34, "missing semantic roles: " + roles.size());
             if (args.length > 2 && args[2].equals("renamed")) {
+                for (String key : List.of("filter", "secondary"))
+                    check(chooserRoles.get(key).contains("->renamedMethod"), "old chooser method used: " + key);
                 check(roles.get("type.wrapper").equals("fixture.Role0"), "fixture did not rename wrapper");
                 check(roles.get("type.adapter").equals("fixture.Role3"), "fixture did not rename adapter");
                 for (String key : List.of("device.key", "device.setType", "holder.image", "adapter.bind",
@@ -48,9 +53,13 @@ public final class OShareDexResolverTest {
                 Looper.prepareMainLooper();
                 OShareSymbols bound = new OShareSymbols(roles, new PathClassLoader(args[1],
                         ClassLoader.getSystemClassLoader().getParent()));
+                OShareChooserResolver.Roles chooser = new OShareChooserResolver.Roles(chooserRoles,
+                        bound.deviceConstructor.getDeclaringClass().getClassLoader(), bound);
+                check(chooserRoles.get("filter").contains("->H(Ljava/util/List;)Ljava/util/List;"), "direct candidate baseline");
                 Object device = bound.deviceConstructor.newInstance();
                 bound.invoke("device.setKey", device, "airdrop:123");
                 bound.invoke("device.setName", device, "DexKit test");
+                chooser.secondary.invoke(device, "AirDrop");
                 bound.invoke("device.setProgress", device, 42);
                 bound.invoke("device.setState", device, bound.state("TRANSIT_WAIT"));
                 bound.setType(device, 2);

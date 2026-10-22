@@ -51,6 +51,9 @@ public final class BridgeMessenger {
     private static final java.util.Map<IBinder, Integer> CLIENT_UIDS = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.Set<IBinder> RECEIVE_CLIENTS = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static volatile Messenger server;
+    private static final OutgoingPreparations PREPARATIONS = new OutgoingPreparations();
+
+    static boolean preparingOutgoing() { return PREPARATIONS.busy(android.os.SystemClock.elapsedRealtime()); }
 
     private static final Handler COMMAND_HANDLER = new Handler(Looper.getMainLooper(), message -> {
         if (message.what == MSG_COMMAND) {
@@ -101,7 +104,11 @@ public final class BridgeMessenger {
     static boolean trustedReadyUid(Context context, int uid) {
         if (uid < 0 || uid / 100000 != Process.myUid() / 100000) return false;
         try { return uid == context.getPackageManager().getPackageUid(Entry.HOST, 0); }
-        catch (Exception failure) { return false; }
+        catch (Exception failure) {
+            StartupTrace.mark("BRIDGE_HOST_UID_UNAVAILABLE");
+            Log.w(TAG, "Cannot resolve Mosey UID from host=" + context.getPackageName(), failure);
+            return false;
+        }
     }
 
     private static void announceReady() {
@@ -212,6 +219,7 @@ public final class BridgeMessenger {
         for (Messenger target : CLIENTS) {
         try {
             Message message = Message.obtain(null, MSG_EVENT);
+            message.replyTo = server;
             Bundle bundle = new Bundle();
             bundle.putString(EXTRA_JSON, event.toString());
             message.setData(bundle);
@@ -229,11 +237,18 @@ public final class BridgeMessenger {
             command = new JSONObject(json);
             String cmd = command.optString("cmd", "");
             if ((!ShareModeRuntime.current().usesOShare() || ShareModeRuntime.switching()) &&
-                    (cmd.startsWith("send") || cmd.equals("discover_start") || cmd.equals("advertise_start")
+                    (cmd.startsWith("send") || cmd.equals("prepare_send") || cmd.equals("discover_start") || cmd.equals("advertise_start")
                             || cmd.equals("set_download_dir") || cmd.equals("retry_publish")))
                 throw new IllegalStateException("AirDrop 分享入口正在切换或已停用 OShare");
             Log.i(TAG, "bridge command: " + cmd);
             switch (cmd) {
+                case "prepare_send":
+                    if (!PREPARATIONS.acquire(uid, command.getString("session"), android.os.SystemClock.elapsedRealtime()))
+                        throw new IllegalStateException("Too many pending shares or invalid session");
+                    break;
+                case "finish_prepare":
+                    PREPARATIONS.release(uid, command.getString("session"));
+                    break;
                 case "ping":
                     sendEvent(new JSONObject().put("ev", "pong")
                             .put("ts", System.currentTimeMillis()));
@@ -254,12 +269,14 @@ public final class BridgeMessenger {
                     ProviderApi.sendPath(command.getString("path"), command.getLong("id"));
                     break;
                 case "send_files":
-                    ProviderApi.sendFiles(command.getJSONArray("files"), files, command.getLong("id"));
+                    ProviderApi.sendFiles(command.getJSONArray("files"), files, command.getLong("id"),
+                            command.optString("session", java.util.UUID.randomUUID().toString()));
                     break;
                 case "send_content":
                     ProviderApi.sendContent(command.optJSONArray("uris") == null
                             ? new org.json.JSONArray() : command.getJSONArray("uris"),
-                            command.optString("text", ""), command.getLong("id"));
+                            command.optString("text", ""), command.getLong("id"),
+                            command.optString("session", java.util.UUID.randomUUID().toString()));
                     break;
                 case "send_test":
                     ProviderApi.sendTestFile(command.getLong("id"));
@@ -285,7 +302,8 @@ public final class BridgeMessenger {
                     IncomingReceiver.retryPublish(command.getLong("id"), command.getString("session"));
                     break;
                 case "cancel":
-                    ProviderApi.cancel(command.getLong("id"));
+                    if (command.has("session")) ProviderApi.cancel(command.getLong("id"), command.getString("session"));
+                    else ProviderApi.cancel(command.getLong("id"));
                     break;
                 case "set_download_dir":
                     ProviderApi.setDownloadDirectory(command.getString("path"));
@@ -311,6 +329,8 @@ public final class BridgeMessenger {
             } catch (Throwable ignored) {
             }
         } finally {
+            if ("send_files".equals(command.optString("cmd")) || "send_content".equals(command.optString("cmd")))
+                PREPARATIONS.release(uid, command.optString("session"));
             closeFiles(files);
         }
     }
@@ -333,6 +353,7 @@ public final class BridgeMessenger {
     private static void deliver(Messenger client, JSONObject event) {
         try {
             Message message = Message.obtain(null, MSG_EVENT);
+            message.replyTo = server;
             Bundle data = new Bundle(); data.putString(EXTRA_JSON, event.toString()); message.setData(data);
             client.send(message);
         } catch (RemoteException failure) { remove(client); }

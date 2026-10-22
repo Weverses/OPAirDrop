@@ -67,6 +67,8 @@ public final class BridgeHandshakeTest {
         signals.registered.onReceive(signals, new Intent(BridgeMessenger.READY));
         check(wakeups[0] == 0, "anonymous hint woke the connection");
         int[] admitted = {0, 0}, ready = {0, 0};
+        int[] events = {0, 0};
+        Messenger[] channels = new Messenger[2];
         Messenger[] clients = new Messenger[2];
         for (int i = 0; i < clients.length; i++) {
             final int index = i;
@@ -75,7 +77,13 @@ public final class BridgeHandshakeTest {
                 else if (message.what == BridgeMessenger.MSG_HELLO) {
                     check(message.replyTo != null, "ready without command channel");
                     check(admitted[index] > 0, "ready before admission");
+                    channels[index] = message.replyTo;
                     ready[index]++;
+                } else if (message.what == BridgeMessenger.MSG_EVENT) {
+                    check(message.replyTo != null && channels[index] != null
+                            && channels[index].getBinder().equals(message.replyTo.getBinder()),
+                            "event does not carry the admitted provider Binder");
+                    events[index]++;
                 }
                 return true;
             }));
@@ -119,9 +127,15 @@ public final class BridgeHandshakeTest {
                         check(acknowledged[0] == 1 && BridgeMessenger.hasReceiveClient(), "receive ACK did not wake advertising preparation");
                         command.invoke(null, "{\"cmd\":\"receive_ui_ready\"}", null, uid, clients[0]);
                         check(acknowledged[0] == 1, "duplicate receive ACK restarted preparation");
-                    } catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
-                    System.out.println("ANDROID_BRIDGE_HANDSHAKE_PASSED: launch identity, trusted readiness hints, pending/ready, isolated clients");
-                    System.exit(0);
+                        java.lang.reflect.Method event = BridgeMessenger.class.getDeclaredMethod("sendEvent", org.json.JSONObject.class);
+                        event.setAccessible(true);
+                        event.invoke(null, new org.json.JSONObject().put("ev", "target").put("id", 123));
+                    } catch (Exception failure) { throw new AssertionError(failure); }
+                    main.post(() -> {
+                        check(events[0] > 0 && events[1] > 0, "provider events did not reach both admitted clients");
+                        System.out.println("ANDROID_BRIDGE_HANDSHAKE_PASSED: launch identity, trusted readiness hints, pending/ready, isolated clients, event source Binder");
+                        System.exit(0);
+                    });
                 });
             });
         });

@@ -22,7 +22,8 @@ def main():
     decoded = args.output / 'decoded'
     subprocess.run(['apktool', 'd', '-r', str(args.apk), '-o', str(decoded)], check=True)
     targets = ('l9/b', 'v9/d', 'v9/a', 'com/oplus/oshare/ui/DeviceAdapter',
-               'com/oplus/oshare/ui/ShareActivity', 'com/oplus/oshare/OShareClient$6')
+               'com/oplus/oshare/ui/ShareActivity', 'com/oplus/oshare/OShareClient$6',
+               'com/oplus/oshare/ui/direct/DirectShareServer')
     methods, fields = {}, {}
     smali = list(decoded.glob('smali*/**/*.smali'))
     for path in smali:

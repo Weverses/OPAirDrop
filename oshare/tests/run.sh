@@ -41,3 +41,12 @@ java -cp "$work" com.tlsu.oshareairdrop.OShareApkFilesTest
 javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/ReceiveDirectory.java" "$root/tests/ReceiveDirectoryTest.java" "$root/app/src/main/java/com/tlsu/oshareairdrop/ReceiveUiPolicy.java" "$root/tests/ReceiveUiPolicyTest.java"
 java -cp "$work" com.tlsu.oshareairdrop.ReceiveDirectoryTest
 java -cp "$work" com.tlsu.oshareairdrop.ReceiveUiPolicyTest
+
+javac -cp "$work" -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/SendUiState.java" "$root/tests/SendUiStateTest.java"
+java -cp "$work" com.tlsu.oshareairdrop.SendUiStateTest
+
+javac -cp "$work" -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/ChooserTargets.java" \
+    "$root/app/src/main/java/com/tlsu/oshareairdrop/ChooserSessions.java" \
+    "$root/app/src/main/java/com/tlsu/oshareairdrop/PendingShares.java" \
+    "$root/app/src/main/java/com/tlsu/oshareairdrop/OutgoingPreparations.java" "$root/tests/ChooserIntegrationTest.java"
+java -cp "$work" com.tlsu.oshareairdrop.ChooserIntegrationTest

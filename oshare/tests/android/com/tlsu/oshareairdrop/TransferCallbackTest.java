@@ -58,8 +58,15 @@ public final class TransferCallbackTest {
                 check(!folder.exists(), "terminal retained files: " + status);
                 JSONObject last = events.get(events.size()-1);
                 check(last.getBoolean("terminal"), "missing normalized terminal flag");
+                check(last.getString("session").equals(lease.session), "callback lost outgoing session identity");
                 check(last.getDouble("progress") == 0, "NaN was not normalized");
                 OutgoingTransfers.Lease<File> retry = outgoing.begin(7, null);
+                try {
+                    ProviderApi.cancel(7, lease.session);
+                    throw new AssertionError("retired UI session reached provider cancellation");
+                } catch (IllegalStateException expected) {
+                    check(expected.getMessage().contains("session expired"), "old cancel did not fail on session ownership");
+                }
                 callback.invoke(null, "a", new Object[]{target,new Metadata(status)}, lease);
                 check(outgoing.isCurrent(retry), "old callback removed retry");
                 outgoing.finish(retry);

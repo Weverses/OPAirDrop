@@ -244,6 +244,7 @@ public final class ProviderApi {
             json.put("incoming", Boolean.TRUE.equals(field(target, "f")));
             json.put("status", status);
             json.put("terminal", terminal);
+            if (lease != null) json.put("session", lease.session);
             json.put("progress", OutgoingTransfers.progress(((Number) field(metadata, "b")).doubleValue()));
             json.put("timestamp", longField(metadata, "h"));
             json.put("remainingBytes", longField(metadata, "s"));
@@ -324,7 +325,7 @@ public final class ProviderApi {
         if (!panelDiscovery) haltDiscovery();
     }
 
-    static boolean hasOutgoing() { return !OUTGOING_TARGETS.isEmpty(); }
+    static boolean hasOutgoing() { return OUTGOING.hasActive() || !OUTGOING_TARGETS.isEmpty() || BridgeMessenger.preparingOutgoing(); }
 
     private static void ensureDiscovery() {
         if (discovering) {
@@ -439,6 +440,10 @@ public final class ProviderApi {
         sendContent(uris, text, targetId, OUTGOING.begin(targetId, null));
     }
 
+    public static synchronized void sendContent(JSONArray uris, String text, long targetId, String session) {
+        sendContent(uris, text, targetId, OUTGOING.begin(targetId, null, session));
+    }
+
     private static synchronized void sendContent(JSONArray uris, String text, long targetId,
             OutgoingTransfers.Lease<File> lease) {
         boolean submitted = false;
@@ -498,6 +503,7 @@ public final class ProviderApi {
             if (code != 0) throw new IllegalStateException("send returned " + code);
             submitted = true;
             emit("send_requested", new JSONObject().put("id", targetId).put("code", code)
+                    .put("session", lease.session)
                     .put("files", uris.length()).put("hasText", text != null && !text.isEmpty()));
         } catch (Throwable t) { throw new IllegalStateException("cannot send attachments", t); }
         finally {
@@ -508,6 +514,10 @@ public final class ProviderApi {
     }
 
     public static void sendFiles(JSONArray names, List<ParcelFileDescriptor> files, long targetId) {
+        sendFiles(names, files, targetId, UUID.randomUUID().toString());
+    }
+
+    public static void sendFiles(JSONArray names, List<ParcelFileDescriptor> files, long targetId, String session) {
         if (files == null || files.isEmpty() || names.length() != files.size())
             throw new IllegalArgumentException("file descriptor count differs");
         File directory = new File(HostContext.get().getCacheDir(), "oshare-outgoing/" + UUID.randomUUID());
@@ -515,7 +525,7 @@ public final class ProviderApi {
         boolean submitted = false;
         OutgoingTransfers.Lease<File> lease = null;
         try {
-            lease = OUTGOING.begin(targetId, directory);
+            lease = OUTGOING.begin(targetId, directory, session);
             JSONArray uris = new JSONArray();
             for (int i = 0; i < files.size(); i++) {
                 String name = names.getJSONObject(i).optString("name", "shared-file");
@@ -620,6 +630,12 @@ public final class ProviderApi {
                 new Class<?>[]{cls("com.google.android.gms.nearby.sharing.ShareTarget")}, target);
         if (code != 0) throw new IllegalStateException("cancel returned " + code);
         emitCode("cancelled", code);
+    }
+
+    /** Delayed UI actions must never cancel a newer lease or an incoming task. */
+    public static synchronized void cancel(long targetId, String session) {
+        if (!OUTGOING.matches(targetId, session)) throw new IllegalStateException("outgoing session expired");
+        cancel(targetId);
     }
 
     public static synchronized void setDownloadDirectory(String path) {

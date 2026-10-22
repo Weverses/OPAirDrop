@@ -64,7 +64,7 @@ final class OShareResolver {
         return bound;
     }
 
-    private static void loadNative(ApplicationInfo module) {
+    static void loadNative(ApplicationInfo module) {
         try { System.loadLibrary("dexkit"); return; }
         catch (UnsatisfiedLinkError ignored) { /* LSPosed loaders may omit module native paths. */ }
         // Load from the module APK, never a writable host cache. AGP stores these
