@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" fill="none">
+  <title>OPAirDrop</title>
+  <defs>
+    <linearGradient id="tile" x1="24" y1="8" x2="138" y2="156" gradientUnits="userSpaceOnUse"><stop stop-color="#fff"/><stop offset="1" stop-color="#edf4ff"/></linearGradient>
+    <linearGradient id="signal" x1="34" y1="34" x2="127" y2="128" gradientUnits="userSpaceOnUse"><stop stop-color="#14b5ff"/><stop offset=".56" stop-color="#1689ff"/><stop offset="1" stop-color="#3860fa"/></linearGradient>
+  </defs>
+  <rect x="1" y="1" width="158" height="158" rx="39" fill="url(#tile)"/>
+  <rect x="1.5" y="1.5" width="157" height="157" rx="38.5" stroke="#c5d9f5" stroke-opacity=".36"/>
+  <g stroke="url(#signal)" stroke-width="9" stroke-linecap="round">
+    <path d="M48 124a55 55 0 1 1 64 0"/>
+    <path d="M61 106a33 33 0 1 1 38 0"/>
+  </g>
+  <circle cx="80" cy="79" r="14" fill="url(#signal)"/>
+</svg>

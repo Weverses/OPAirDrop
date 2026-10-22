@@ -26,6 +26,7 @@ final class IncomingReceiver {
     private IncomingReceiver() {}
 
     static boolean busy() { return TASKS.busy(); }
+    static boolean historyActive() { return TASKS.historyActive(); }
     static boolean active(long id) { return TASKS.active(id); }
     static boolean ownsFile(long attachmentId) {
         for (IncomingTransfers.Task<Object> task : TASKS.snapshot()) {

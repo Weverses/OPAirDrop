@@ -4,14 +4,14 @@
 
 ## 研究与部署参考
 
-| 项目 | 参考内容 |
-| --- | --- |
-| [34306/AirDropVivoCN](https://github.com/34306/AirDropVivoCN) | 初期研究工程与 Android AirDrop 部署方案 |
-| [thelok1s/mosey-extended](https://github.com/thelok1s/mosey-extended) | 模块组织、Mosey 部署与服务接入 |
-| [FeelLiao/mosey-bada](https://github.com/FeelLiao/mosey-bada) | Binder 桥接与用户态分享架构 |
-| [seemoo-lab/owl](https://github.com/seemoo-lab/owl) | AWDL 帧格式、频道字段与协议研究 |
-| [t4t5/omdrop-owl](https://github.com/t4t5/omdrop-owl) | 固定频道下的时间窗口与吞吐分析 |
-| [UvejsGj/Windfall](https://github.com/UvejsGj/Windfall) | 无线重传和接收响应分析 |
+| 项目 | 参考内容 | 上游许可证 |
+| --- | --- | --- |
+| [34306/AirDropVivoCN](https://github.com/34306/AirDropVivoCN) | 初期研究工程与 Android AirDrop 部署方案 | GPL-3.0 |
+| [thelok1s/mosey-extended](https://github.com/thelok1s/mosey-extended) | 模块组织、Mosey 部署与服务接入 | GPL-2.0 |
+| [FeelLiao/mosey-bada](https://github.com/FeelLiao/mosey-bada) | Binder 桥接与用户态分享架构 | 未声明统一许可证，按具体文件声明 |
+| [seemoo-lab/owl](https://github.com/seemoo-lab/owl) | AWDL 帧格式、频道字段与协议研究 | GPL-3.0 |
+| [t4t5/owly](https://github.com/t4t5/owly)（原 omdrop-owl） | 固定频道下的时间窗口与吞吐分析 | MIT |
+| [UvejsGj/Windfall](https://github.com/UvejsGj/Windfall) | 无线重传和接收响应分析 | MIT |
 
 上述项目按各自的上游许可证提供，引用源码的版权与许可声明随相应文件保留。
 
@@ -86,6 +86,8 @@
 - [libxposed API](https://github.com/libxposed/api)：桥接工程使用的 Xposed 接口。
 - [LSPosed](https://github.com/LSPosed/LSPosed)：桥接运行环境。
 - [KernelSU](https://github.com/tiann/KernelSU)：模块、挂载和 WebUI 运行环境。
+
+libxposed API 使用 Apache-2.0，LSPosed 使用 GPL-3.0。KernelSU 的 kernel 目录使用 GPL-2.0-only，其余部分使用 GPL-3.0-or-later；Vite 使用 MIT。WebUI 的“开放源代码许可”页面列出各参考项目、组件的许可名称及原文来源，未声明统一许可的材料明确标记。
 
 完整的使用与参考项目列表同时列在 [README](README.md#使用与参考项目)。
 

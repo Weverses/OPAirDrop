@@ -17,6 +17,7 @@ public final class IncomingTransfers<T> {
         public volatile String phase = "pending";
         public volatile String message = "";
         public volatile boolean terminal;
+        public volatile boolean accepted;
         private Task(long id, String session, long now, T target) {
             this.id = id; this.session = session; this.created = now; this.target = target;
         }
@@ -60,6 +61,7 @@ public final class IncomingTransfers<T> {
         Task<T> task = require(id, session);
         if (!"pending".equals(task.phase)) throw new IllegalStateException("接收请求已处理");
         task.phase = "accepting";
+        task.accepted = true;
         return task;
     }
 
@@ -71,6 +73,7 @@ public final class IncomingTransfers<T> {
         task.target = target;
         task.status = status;
         task.progress = OutgoingTransfers.progress(progress);
+        if (status == 1005 || status == 1017 || status == 1006) task.accepted = true;
         if (status == 1006) {
             task.phase = "publishing";
         } else if (finalFlag || isFailure(status)) {
@@ -96,6 +99,10 @@ public final class IncomingTransfers<T> {
 
     public synchronized boolean busy() {
         return tasks.values().stream().anyMatch(t -> !t.terminal);
+    }
+
+    public synchronized boolean historyActive() {
+        return tasks.values().stream().anyMatch(t -> !t.terminal && t.accepted);
     }
 
     public synchronized List<Task<T>> snapshot() { return new ArrayList<>(tasks.values()); }

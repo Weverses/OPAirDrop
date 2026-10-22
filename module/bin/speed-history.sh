@@ -48,7 +48,13 @@ waiting(){
 }
 transfer_state(){
     transfer_dump=$(/system/bin/timeout 3 /system/bin/dumpsys activity service "$COMP" 2>/dev/null) || transfer_dump=
-    if printf '%s\n' "$transfer_dump" | grep -Eq 'OPAIRSHARE_RECEIVE busy=1([[:space:]]|$)|isTransferFinished=false|activeTransfers=\[[^]]+\]|Active Transfers \([1-9][0-9]*\)|Receive provider transferring: true';then
+    if printf '%s\n' "$transfer_dump" | grep -q '^OPAIRSHARE_HISTORY state=active$';then
+        provider_state=busy
+    elif printf '%s\n' "$transfer_dump" | grep -q '^OPAIRSHARE_HISTORY state=waiting$';then
+        provider_state=pending
+    elif printf '%s\n' "$transfer_dump" | grep -q '^OPAIRSHARE_HISTORY state=idle$';then
+        provider_state=idle
+    elif printf '%s\n' "$transfer_dump" | grep -Eq 'OPAIRSHARE_RECEIVE busy=1([[:space:]]|$)|isTransferFinished=false|activeTransfers=\[[^]]+\]|Active Transfers \([1-9][0-9]*\)|Receive provider transferring: true';then
         provider_state=busy
     elif printf '%s\n' "$transfer_dump" | grep -Eq '^No services match:|^No service found' ||
          { printf '%s\n' "$transfer_dump" | grep -q 'ExternalSharingService state:' &&
@@ -60,20 +66,20 @@ transfer_state(){
 run(){
     exec 5> "$D/worker.flock";flock -n 5 5>&5 || exit 0
     echo "$$" > "$D/pid"
-    idx=0;previous=0;prev_tx=0;prev_rx=0;rate_tx=0;rate_rx=0;transfer_check=0;provider_state=unknown
+    idx=0;previous=0;prev_tx=0;prev_rx=0;rate_tx=0;rate_rx=0;transfer_check=0;provider_state=unknown;awaiting=off
     cleanup(){ trap - EXIT INT TERM;flush;rate_tx=0;rate_rx=0;waiting;[ "$(cat "$D/pid" 2>/dev/null || true)" != "$$" ] || rm -f "$D/pid"; }
     trap cleanup EXIT
     trap 'exit 0' INT TERM
     while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] && [ ! -e "$MODDIR/disable" ] && [ ! -e "$MODDIR/remove" ];do
         t=$(now_ms)
         if [ ! -r "$IFACE/statistics/tx_bytes" ] || [ ! -r "$IFACE/statistics/rx_bytes" ];then
-            flush;rate_tx=0;rate_rx=0;waiting;idx=0;previous=0;provider_state=unknown;transfer_check=0;sleep 0.5;continue
+            flush;rate_tx=0;rate_rx=0;waiting;idx=0;previous=0;provider_state=unknown;transfer_check=0;awaiting=off;sleep 0.5;continue
         fi
         next_idx=$(cat "$IFACE/ifindex" 2>/dev/null || echo 0)
         tx=$(cat "$IFACE/statistics/tx_bytes" 2>/dev/null || echo 0)
         rx=$(cat "$IFACE/statistics/rx_bytes" 2>/dev/null || echo 0)
         if [ "$previous" = 0 ] || [ "$next_idx" != "$idx" ] || awk -v tx="$tx" -v rx="$rx" -v ptx="$prev_tx" -v prx="$prev_rx" 'BEGIN {exit !(tx<ptx||rx<prx)}';then
-            flush;idx=$next_idx;previous=$t;prev_tx=$tx;prev_rx=$rx;rate_tx=0;rate_rx=0;provider_state=unknown;transfer_check=0;waiting;sleep 0.5;continue
+            flush;idx=$next_idx;previous=$t;prev_tx=$tx;prev_rx=$rx;rate_tx=0;rate_rx=0;provider_state=unknown;transfer_check=0;awaiting=off;waiting;sleep 0.5;continue
         fi
         dt=$((t-previous));[ "$dt" -gt 0 ] || { sleep 0.5;continue; }
         sample_rates
@@ -83,11 +89,17 @@ run(){
             transfer_check=$t
             transfer_state
         fi
+        if [ "$provider_state" = pending ];then
+            if [ "$confirmed" = on ];then flush;else reset_record;fi
+            awaiting=on
+        elif [ "$provider_state" = busy ] || [ "$provider_state" = idle ];then
+            awaiting=off
+        fi
         if [ "$provider_state" = busy ] && [ "$confirmed" != on ];then
             reset_record
             started=$previous;start_wall=$(($(date +%s)-dt/1000));confirmed=on
         fi
-        if { [ "$dtx" != 0 ] || [ "$drx" != 0 ]; } && { [ "$provider_state" != idle ] || [ "$confirmed" = on ]; };then
+        if [ "$awaiting" != on ] && { [ "$dtx" != 0 ] || [ "$drx" != 0 ]; } && { [ "$provider_state" != idle ] || [ "$confirmed" = on ]; };then
             if [ "$started" = 0 ];then started=$previous;start_wall=$(($(date +%s)-dt/1000));fi
             add_sample;last_data=$t
         fi

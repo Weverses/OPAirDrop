@@ -30,7 +30,9 @@ else:
  if len(p)>3:
   state=p[3]
   if state=='unknown':(b/'provider').write_text('Unavailable dump')
-  else:(b/'provider').write_text('ExternalSharingService state:\\nActive Transfers ('+('1' if state=='busy' else '0')+')\\nReceive provider transferring: false\\nOPAIRSHARE_RECEIVE busy='+('1' if state=='publishing' else '0'))
+  else:
+   phase={'pending':'waiting','active':'active','done':'idle'}.get(state)
+   (b/'provider').write_text('ExternalSharingService state:\\nActive Transfers ('+('1' if state in ('busy','pending','active','done') else '0')+')\\nReceive provider transferring: false\\nOPAIRSHARE_RECEIVE busy='+('1' if state=='publishing' else '0')+('\\nOPAIRSHARE_HISTORY state='+phase if phase else ''))
 ''');p.chmod(0o755)
   script=(HERE.parent/'module/bin/speed-history.sh').read_text().replace('/sys/class/net/mosey0',str(interface)).replace('awk \'{printf "%.0f",$1*1000}\' /proc/uptime',f'cat {b}/clock')
   script=script.replace('/system/bin/timeout 3 /system/bin/dumpsys activity service "$COMP"',f'cat {b}/provider')
@@ -48,6 +50,29 @@ else:
   r=s['history'][0];self.assertEqual((r['sent_bytes'],r['received_bytes']),(300000,150000));self.assertEqual(r['peak_tx_bps'],100000);self.assertEqual(r['average_rx_bps'],50000);self.assertEqual(r['duration_s'],3);self.assertEqual(r['kind'],'traffic');self.assertEqual(s['live']['state'],'waiting')
  def test_short_confirmed_transfer_is_saved(self):
   r=self.fixture([(7,100,200)],True)['history'][0];self.assertEqual(r['kind'],'transfer');self.assertEqual(r['sent_bytes'],100)
+ def test_confirmation_wait_does_not_count_time_or_handshake_bytes(self):
+  points=[(7,i*10000,i*1000,'pending') for i in range(1,21)]
+  points += [(7,1200000,120000,'active'),(7,2200000,220000,'active'),(7,3200000,320000,'done')]
+  s=self.fixture(points,False);r=s['history'][0]
+  self.assertEqual(len(s['history']),1);self.assertEqual(r['duration_s'],3)
+  self.assertEqual(r['sent_bytes'],3000000);self.assertEqual(r['average_tx_bps'],1000000)
+  self.assertTrue(all(p['state']=='waiting' for p in s['_samples'][:21]))
+ def test_rejected_or_timed_out_invitation_creates_no_history(self):
+  s=self.fixture([(7,i*10000,0,'pending') for i in range(1,11)]+[(7,110000,0,'done')],False)
+  self.assertEqual(s['history'],[])
+ def test_unknown_dump_after_wait_does_not_start_timer(self):
+  s=self.fixture([(7,10000,0,'pending')]+[(7,10000+i*10000,0,'unknown') for i in range(1,9)],False)
+  self.assertEqual(s['history'],[])
+  self.assertTrue(all(p['state']=='waiting' for p in s['_samples']))
+ def test_long_pause_after_acceptance_is_still_counted(self):
+  points=[(7,10000,0,'pending')]*5
+  points += [(7,1010000,0,'active')]*9+[(7,2010000,0,'active'),(7,2010000,0,'done')]
+  s=self.fixture(points,False);r=s['history'][0]
+  self.assertEqual(r['duration_s'],10);self.assertEqual(r['sent_bytes'],2000000)
+ def test_acceptance_starts_clock_even_before_first_payload(self):
+  points=[(7,0,0,'pending')]*5+[(7,0,0,'active')]*3+[(7,1000000,0,'active'),(7,1000000,0,'done')]
+  r=self.fixture(points,False)['history'][0]
+  self.assertEqual(r['duration_s'],4);self.assertEqual(r['average_tx_bps'],250000)
  def test_discovery_noise_is_filtered(self):self.assertEqual(self.fixture([(7,100,200),(7,1000,2000)])['history'],[])
  def test_new_interface_splits_sessions_without_negative_delta(self):
   s=self.fixture([(7,100000,0),(8,0,0),(8,0,200000)])

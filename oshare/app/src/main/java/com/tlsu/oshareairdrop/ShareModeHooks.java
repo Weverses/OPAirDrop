@@ -21,13 +21,20 @@ final class ShareModeHooks {
             controller.getDeclaredMethod("a", target), controller.getDeclaredMethod("b", target),
             controller.getDeclaredMethod("c", target), controller.getDeclaredMethod("m", String.class)
         };
+        for (Method method : methods) {
+            // Mosey's directory setter is void; the other operations return a status code.
+            Class<?> expected = method.getName().equals("m") ? void.class : int.class;
+            if (method.getReturnType() != expected) {
+                throw new IllegalStateException("Unsupported Mosey method: " + method);
+            }
+        }
         ArrayList<HookHandle> hooks = new ArrayList<>();
         try {
             for (Method method : methods) {
-                if (method.getReturnType() != int.class) throw new IllegalStateException("Unsupported Mosey method: " + method);
                 hooks.add(module.hook(method).intercept(chain -> {
                     Integer result = ShareModeRuntime.result(method.getName());
-                    return result == null ? chain.proceed() : result;
+                    if (result == null) return chain.proceed();
+                    return method.getReturnType() == void.class ? null : result;
                 }));
             }
         } catch (Exception failure) {

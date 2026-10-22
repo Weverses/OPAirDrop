@@ -147,6 +147,7 @@ public final class Entry extends XposedModule {
             hookPermissionActivity(ProviderHolder.loader());
             BridgeMessenger.install(app);
             DiscoveryController.install(this, ProviderHolder.loader());
+            TransferHistoryHooks.install(this, ProviderHolder.loader());
             ReceiveController.install(this, app, ProviderHolder.loader());
         }
         if (ShareModeRuntime.initialize(app).usesOShare()) scheduleServiceStart(app);

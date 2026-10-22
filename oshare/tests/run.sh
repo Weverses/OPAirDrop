@@ -18,11 +18,19 @@ javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/DiscoverySessio
 java -cp "$work" com.tlsu.oshareairdrop.DiscoverySessionTest
 javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/ShareMode.java" "$root/tests/ShareModeTest.java"
 java -cp "$work" com.tlsu.oshareairdrop.ShareModeTest
+javac -cp "$work" -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/TransferHistory.java" "$root/tests/TransferHistoryTest.java"
+java -cp "$work" com.tlsu.oshareairdrop.TransferHistoryTest
 javac -d "$work/mode-runtime" "$root"/tests/mode-runtime/android/*/*.java \
     "$root"/tests/mode-runtime/com/tlsu/oshareairdrop/*.java \
     "$root/app/src/main/java/com/tlsu/oshareairdrop/ShareMode.java" \
     "$root/app/src/main/java/com/tlsu/oshareairdrop/ShareModeRuntime.java"
 java -cp "$work/mode-runtime" com.tlsu.oshareairdrop.ShareModeRuntimeTest
+
+javac -cp "$work/mode-runtime" -d "$work/mode-hooks" \
+    "$root"/tests/mode-hooks/io/github/libxposed/api/*.java \
+    "$root"/tests/mode-hooks/com/tlsu/oshareairdrop/*.java \
+    "$root/app/src/main/java/com/tlsu/oshareairdrop/ShareModeHooks.java"
+java -cp "$work/mode-hooks:$work/mode-runtime" com.tlsu.oshareairdrop.ShareModeHooksTest
 
 javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/BridgeReconnect.java" "$root/tests/BridgeReconnectTest.java"
 java -cp "$work" com.tlsu.oshareairdrop.BridgeReconnectTest

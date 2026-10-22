@@ -82,6 +82,7 @@ final class ReceiveController {
             handles.add(module.hook(dump).intercept(chain -> {
                 Object result = chain.proceed();
                 ((java.io.PrintWriter) chain.getArg(1)).println("OPAIRSHARE_RECEIVE busy=" + (IncomingReceiver.busy() ? 1 : 0));
+                ((java.io.PrintWriter) chain.getArg(1)).println("OPAIRSHARE_HISTORY state=" + TransferHistoryHooks.state());
                 ((java.io.PrintWriter) chain.getArg(1)).println("OPAIRSHARE_DISCOVERY " + DiscoveryController.status(ProviderHolder.get()));
                 ((java.io.PrintWriter) chain.getArg(1)).println("OPAIRSHARE_MODE switch_ready=" + (switchReady() ? 1 : 0));
                 return result;

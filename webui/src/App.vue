@@ -3,6 +3,8 @@ import {ref,computed,watch,onMounted,onBeforeUnmount} from 'vue';
 import {MiuixSnackbarHost,MiuixScrollArea,MiuixIcon,MiuixNavigationBar,MiuixTopAppBar,MiuixIconButton,MiuixButton,MiuixCard,MiuixSmallTitle,MiuixText,MiuixInput,MiuixBasicComponent,MiuixRadioButtonPreference,showSnackbar} from 'miuix-vue';
 import {ScreenMirroring,Settings} from 'miuix-vue/icons';
 import {API,type Status,type HistoryData,type SpeedRecord,type ShareMode} from './api';
+import AboutView from './components/AboutView.vue';
+import LicensesView from './components/LicensesView.vue';
 const tab=ref(0),state=ref<Status|null>(null),busy=ref(false),error=ref(''),updated=ref('');
 let statusEpoch=0,lastStatusAt=0;
 let statusRequest:Promise<boolean>|null=null,historyRequest:Promise<boolean>|null=null;
@@ -10,29 +12,7 @@ const manualBusy=ref(false);
 const history=ref<HistoryData|null>(null);
 const navItems=[{label:'状态'},{label:'设置'}];
 const icons=[ScreenMirroring,Settings];
-const referenceProjects=[
- {name:'OnePlusOSS',url:'https://github.com/OnePlusOSS/kernel_manifest',usage:'内核、Qualcomm WLAN 与 Oplus Wonder 源码基线'},
- {name:'34306 / AirDropVivoCN',url:'https://github.com/34306/AirDropVivoCN',usage:'早期研究与部署方案'},
- {name:'thelok1s / mosey-extended',url:'https://github.com/thelok1s/mosey-extended',usage:'KernelSU 模块组织、Mosey 部署与服务接入'},
- {name:'FeelLiao / mosey-bada',url:'https://github.com/FeelLiao/mosey-bada',usage:'原生 Binder 服务接入与用户态分享架构'},
- {name:'seemoo-lab / owl',url:'https://github.com/seemoo-lab/owl',usage:'AWDL 帧格式与频道字段分析'},
- {name:'t4t5 / omdrop-owl',url:'https://github.com/t4t5/omdrop-owl',usage:'AWDL 时间窗口、固定频道与吞吐优化'},
- {name:'UvejsGj / Windfall',url:'https://github.com/UvejsGj/Windfall',usage:'无线重传、接收响应与传输性能分析'},
- {name:'luyanci / hybrid-miuix-webui',url:'https://github.com/luyanci/hybrid-miuix-webui',usage:'WebUI 组件布局与界面组织'},
-];
-const componentProjects=[
- {name:'Vue',url:'https://github.com/vuejs/core',usage:'WebUI 应用框架'},
- {name:'miuix-vue',url:'https://github.com/YuKongA/miuix-vue',usage:'WebUI 组件'},
- {name:'Motion for Vue',url:'https://github.com/motiondivision/motion-vue',usage:'miuix-vue 动画依赖'},
- {name:'Motion',url:'https://github.com/motiondivision/motion',usage:'miuix-vue 动画依赖'},
- {name:'Vite',url:'https://github.com/vitejs/vite',usage:'WebUI 构建'},
- {name:'Gradle',url:'https://github.com/gradle/gradle',usage:'Android 桥接工程构建'},
- {name:'DexKit',url:'https://github.com/LuckyPray/DexKit',usage:'OShare 内部入口语义解析'},
- {name:'libxposed API',url:'https://github.com/libxposed/api',usage:'OShare / Mosey 桥接接口'},
- {name:'LSPosed',url:'https://github.com/LSPosed/LSPosed',usage:'Android 桥接运行环境'},
- {name:'KernelSU',url:'https://github.com/tiann/KernelSU',usage:'模块启动、挂载与 WebUI 运行环境'},
-];
-const settingsView=ref<'main'|'about'|'logs'|'name'|'directory'|'sharing'>('main'),logs=ref('点击刷新读取模块日志。'),logBusy=ref(false),exportBusy=ref(false),exportedPath=ref('');
+const settingsView=ref<'main'|'about'|'logs'|'name'|'directory'|'sharing'|'licenses'>('main'),logs=ref('点击刷新读取模块日志。'),logBusy=ref(false),exportBusy=ref(false),exportedPath=ref('');
 const shareModeNames:Record<ShareMode,string>={quickshare:'Quick Share',oshare:'OShare',both:'二者共存'};
 const shareModeOptions:{value:ShareMode;title:string;summary:string}[]=[
  {value:'quickshare',title:'Quick Share',summary:'使用 Quick Share 与 Apple 收发，关闭 OShare 的 AirDrop 桥接和后台接收'},
@@ -44,7 +24,7 @@ const shareModeSummary=computed(()=>!state.value?'读取中':state.value.share_m
 const nameDraft=ref('');
 const directoryDraft=ref('');
 const nameLength=computed(()=>[...nameDraft.value.trim()].length);
-const pageTitle=computed(()=>tab.value===0?'AirDrop':settingsView.value==='about'?'关于':settingsView.value==='logs'?'日志':settingsView.value==='name'?'AirDrop 名称':settingsView.value==='directory'?'接收文件保存位置':settingsView.value==='sharing'?'AirDrop 分享入口':'设置');
+const pageTitle=computed(()=>tab.value===0?'AirDrop':settingsView.value==='about'?'关于':settingsView.value==='licenses'?'开放源代码许可':settingsView.value==='logs'?'日志':settingsView.value==='name'?'AirDrop 名称':settingsView.value==='directory'?'接收文件保存位置':settingsView.value==='sharing'?'AirDrop 分享入口':'设置');
 const live=computed(()=>history.value?.live);
 const recorderOn=computed(()=>history.value?.recorder==='on');
 const recording=computed(()=>recorderOn.value&&live.value?.state==='recording');
@@ -99,7 +79,7 @@ onBeforeUnmount(()=>{if(timer)clearInterval(timer);document.removeEventListener(
 <template>
 <div class="app">
  <MiuixScrollArea class="app-body">
-  <MiuixTopAppBar :large="true" :title="pageTitle"><template #navigation><MiuixIconButton v-if="tab===1&&settingsView!=='main'" aria-label="返回设置" @click="settingsView='main'"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 5-7 7 7 7"/></svg></MiuixIconButton></template><template #actions><MiuixIconButton aria-label="刷新" :aria-busy="manualBusy" :disabled="busy||manualBusy" @click="manualRefresh"><svg :class="{'refresh-spinning':manualBusy}" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 9a7.5 7.5 0 1 0 .4 5M19 4v5h-5"/></svg></MiuixIconButton></template></MiuixTopAppBar>
+  <MiuixTopAppBar :large="true" :title="pageTitle"><template #navigation><MiuixIconButton v-if="tab===1&&settingsView!=='main'" :aria-label="settingsView==='licenses'?'返回关于':'返回设置'" @click="settingsView=settingsView==='licenses'?'about':'main'"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 5-7 7 7 7"/></svg></MiuixIconButton></template><template #actions><MiuixIconButton v-if="settingsView!=='about'&&settingsView!=='licenses'" aria-label="刷新" :aria-busy="manualBusy" :disabled="busy||manualBusy" @click="manualRefresh"><svg :class="{'refresh-spinning':manualBusy}" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 9a7.5 7.5 0 1 0 .4 5M19 4v5h-5"/></svg></MiuixIconButton></template></MiuixTopAppBar>
   <div v-if="error" class="banner error" role="alert">{{error}}</div>
   <div :key="`${tab}-${settingsView}`" class="page">
    <template v-if="tab===0">
@@ -155,11 +135,10 @@ onBeforeUnmount(()=>{if(timer)clearInterval(timer);document.removeEventListener(
     </form></MiuixCard>
    </template>
    <template v-else-if="settingsView==='about'">
-    <MiuixCard><div class="about-page"><h2>OPAirDrop</h2><p>{{state?.version||'版本读取中'}}</p><p>作者：TimelessU</p></div></MiuixCard>
-    <MiuixSmallTitle text="参考项目"/><MiuixCard><a v-for="project in referenceProjects" :key="project.url" class="project-link" :href="project.url" target="_blank" rel="noopener noreferrer"><MiuixBasicComponent :title="project.name" :summary="project.usage"><template #end><span class="entry-arrow">↗</span></template></MiuixBasicComponent></a></MiuixCard>
-    <MiuixSmallTitle text="组件、构建工具与运行环境"/><MiuixCard><a v-for="project in componentProjects" :key="project.url" class="project-link" :href="project.url" target="_blank" rel="noopener noreferrer"><MiuixBasicComponent :title="project.name" :summary="project.usage"><template #end><span class="entry-arrow">↗</span></template></MiuixBasicComponent></a><MiuixBasicComponent title="Unlock CN GMS v3.8" summary="fei-ke · 内置国行 GMS 解锁"/></MiuixCard>
-    <div class="about">各项目的贡献归原作者所有。</div>
-
+    <AboutView :version="state?.version" @licenses="settingsView='licenses'"/>
+   </template>
+   <template v-else-if="settingsView==='licenses'">
+    <LicensesView/>
    </template>
    <template v-else>
     <MiuixCard><MiuixBasicComponent title="模块日志"><template #end><MiuixButton :disabled="logBusy" @click="readLogs">{{logBusy?'读取中':'刷新'}}</MiuixButton></template></MiuixBasicComponent></MiuixCard>
@@ -169,7 +148,7 @@ onBeforeUnmount(()=>{if(timer)clearInterval(timer);document.removeEventListener(
    </template>
   </div>
  </MiuixScrollArea>
- <div class="bottom"><MiuixNavigationBar v-model="tab" :items="navItems"><template #icon="{index}"><MiuixIcon :icon="icons[index]" :size="26"/></template></MiuixNavigationBar></div>
+ <div v-if="settingsView!=='about'&&settingsView!=='licenses'" class="bottom"><MiuixNavigationBar v-model="tab" :items="navItems"><template #icon="{index}"><MiuixIcon :icon="icons[index]" :size="26"/></template></MiuixNavigationBar></div>
 </div>
 <MiuixSnackbarHost/>
 </template>
