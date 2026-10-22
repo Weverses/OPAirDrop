@@ -3,6 +3,7 @@
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
+. "$MODDIR/bin/coex-wifi.sh"
 [ "$(id -u)" = 0 ] || exit 2
 
 receive_wanted() {
@@ -10,7 +11,7 @@ receive_wanted() {
     # OShare is the invitation UI host, not the switch or ten-minute timer.
     same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&
         [ ! -e "$MODDIR/disable" ] && [ ! -e "$MODDIR/remove" ] &&
-        [ ! -e "$STATE/coex-off" ]
+        coex_available
 }
 
 case "${1:-wanted}" in
@@ -41,7 +42,8 @@ case "${1:-wanted}" in
         # Only advertise in an owned, current-boot coexistence session. Legacy
         # UI-only operation may restore/reconnect STA and is not background RX.
         if receive_wanted && same_boot "$STATE/ui-session" &&
-           same_boot "$STATE/coex-session/boot"; then
+           same_boot "$STATE/coex-session/boot" &&
+           [ "$coex_wifi_network" = "$(cat "$STATE/coex-session/network" 2>/dev/null)" ]; then
             /system/bin/setprop debug.opairshare.receive.ready 1
             echo 1
         else

@@ -3,6 +3,7 @@
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
+. "$MODDIR/bin/coex-wifi.sh"
 . "$MODDIR/bin/airdrop-name.sh"
 init_state
 P=/sys/module/qca_cld3_peach_v2/parameters
@@ -41,10 +42,21 @@ background_can_close() {
     ! printf '%s\n' "$background_resumed" | grep -Eq '(com\.google\.android\.gms/[^ ]*nearby\.sharing\.|com\.coloros\.oshare/[^ ]*ShareActivity)'
 }
 status() {
-    wifi=$(framework timeout 5 cmd wifi status 2>/dev/null || true)
+    coex_wifi_read || true
+    wifi=$coex_wifi_text
     freq=$(printf '%s\n' "$wifi" | sed -n 's/.*Frequency: \([0-9][0-9]*\)MHz.*/\1/p' | head -1)
     case "$freq" in 5745) channel=149;;5200) channel=40;;'') channel=unknown;;*) channel=unsupported;;esac
     connected=$(printf '%s\n' "$wifi" | sed -n 's/^Wifi is connected to //p' | head -1)
+    coexist_active=off
+    coexist_reason=manual
+    if coex_requested;then
+        coexist_reason=$coex_wifi_reason
+        if [ -z "$coexist_reason" ];then
+            if [ -e "$STATE/coex-wifi-blocked" ] || [ -e "$STATE/coex-session/invalidated" ];then
+                coexist_reason=recovering
+            else coexist_active=on;fi
+        fi
+    fi
     version=$(sed -n 's/^version=//p' "$MODDIR/module.prop")
     name_hex=$(read_name_hex)
     name_default=$(default_airdrop_name)
@@ -76,7 +88,8 @@ status() {
     if [ -r "$P/opairshare_channel_state" ] && [ -n "$(pidof mosey_server 2>/dev/null || true)" ];then awdl=running;fi
     printf '{'
     pair awdl "$awdl";printf ',';pair quickshare "$quickshare";printf ',';pair oshare "$oshare";printf ','
-    pair version "$version";printf ',';pair coexist "$(coexist)";printf ','
+    pair version "$version";printf ',';pair coexist "$coexist_active";printf ','
+    pair coexist_requested "$(coexist)";printf ',';pair coexist_reason "$coexist_reason";printf ','
     pair airdrop_name "$name_effective";printf ',';pair airdrop_name_default "$name_default";printf ','
     pair airdrop_name_custom "$name_custom";printf ','
     pair scope "$(scope)";printf ',';pair profile "$(profile)";printf ','

@@ -1,8 +1,9 @@
 #!/system/bin/sh
-# Own only a visible UI session; never change the user's Wi-Fi association.
+# Own a UI/background coexistence session; never change Wi-Fi association.
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
+. "$MODDIR/bin/coex-wifi.sh"
 init_state
 P=/sys/module/qca_cld3_peach_v2/parameters
 S="$STATE/coex-session"
@@ -23,34 +24,24 @@ case "${1:-status}" in
         [ ! -e "$STATE/callback-off" ] || { echo 'COEX_BLOCKED callback patch disabled';exit 8; }
         [ -z "$(getprop debug.opairshare.discovery)" ] && [ -z "$(getprop debug.opairshare.standby)" ] || exit 8
         [ ! -e "$S" ] && [ ! -e "$S.preparing" ] || exit 8
-        freq=$(framework cmd wifi status | sed -n 's/.*Frequency: \([0-9][0-9]*\)MHz.*/\1/p' | head -1)
-        if [ -e "$STATE/coex-same149-only" ] && [ "$freq" != 5745 ];then
-            echo "COEX_BLOCKED same149-only frequency=${freq:-disconnected}"
+        if ! coex_wifi_read;then
+            echo "COEX_BLOCKED same149-only reason=$coex_wifi_reason frequency=${coex_wifi_frequency:-unknown}"
             exit 8
         fi
-        case "$freq" in
-            5745) policy=same149;;
-            5200) policy=cross5g;;
-            *) echo "COEX_BLOCKED unsupported STA frequency=${freq:-disconnected}; connect Wi-Fi channel 40 or 149";exit 8;;
-        esac
+        freq=$coex_wifi_frequency
+        policy=same149
         mkdir -m 700 "$S.preparing"
         boot_id > "$S.preparing/boot"
         getprop debug.opairshare.discovery > "$S.preparing/discovery"
         getprop debug.opairshare.standby > "$S.preparing/standby"
         printf '%s\n' "$freq" > "$S.preparing/frequency"
+        printf '%s\n' "$coex_wifi_network" > "$S.preparing/network"
         for knob in $knobs;do cat "$P/$knob" > "$S.preparing/$knob";done
         mv "$S.preparing" "$S"
         # Snapshot is committed before the first mutation. Failed writes retain it.
         setprop debug.opairshare.discovery "$policy"
         echo Y > "$P/passthru_awdl_allow_concurrent"
         echo Y > "$P/passthru_mgmt_home_channel"
-        if [ "$freq" = 5200 ]; then
-            echo 0 > "$P/passthru_awdl_amsdu"
-            echo 2 > "$P/passthru_awdl_phy"
-            echo 7 > "$P/passthru_awdl_mcs"
-            echo 1 > "$P/passthru_awdl_nss"
-            echo 0 > "$P/passthru_awdl_collect_us"
-        fi
         echo "COEX_UI_PREPARED frequency=$freq policy=$policy"
         ;;
     tick)
@@ -81,9 +72,10 @@ case "${1:-status}" in
         if [ "$1" = on ];then rm -f "$STATE/coex-off";else touch "$STATE/coex-off";fi
         ;;
     status)
-        echo "coexist_enabled=$([ -e "$STATE/coex-off" ] && echo no || echo yes)"
+        echo "coexist_enabled=$(if coex_available;then echo yes;else echo no;fi)"
+        echo "coexist_requested=$(if coex_requested;then echo yes;else echo no;fi)"
         echo "coexist_session=$([ -d "$S" ] && echo owned || echo idle)"
-        echo 'supported_sta_mhz=5200,5745'
+        echo 'supported_sta_mhz=5745'
         ;;
     *) exit 2;;
 esac

@@ -22,12 +22,12 @@ framework() {{ cat '{self.base}/wifi'; }}
 '''
         (self.bin/'common.sh').write_text(self.common)
         (self.module/'module.prop').write_text('version=test-r25\n')
-        (self.base/'wifi').write_text('Wifi is connected to "V\\quote\\\""\nFrequency: 5745MHz\n')
+        (self.base/'wifi').write_text('Wifi is enabled\nWifi is connected to "V\\quote\\\""\nSupplicant state: COMPLETED, Frequency: 5745MHz, Net ID: 7,\n')
         (self.bin/'transfer-idle.sh').write_text('#!/bin/sh\nexit "${TEST_TRANSFER_BUSY:-0}"\n')
         for name,code in [('id','echo 0'),('flock','exit "${TEST_LOCK_BUSY:-0}"')]:
             p=self.tools/name;p.write_text('#!/bin/sh\n'+code+'\n');p.chmod(0o755)
         self.env=dict(os.environ,PATH=str(self.tools)+os.pathsep+os.environ['PATH'])
-        for name in ['airdrop-name.sh']:
+        for name in ['airdrop-name.sh', 'coex-wifi.sh']:
             (self.bin/name).write_text((ROOT/'module/bin'/name).read_text().replace('/system/bin/',str(self.tools)+'/'))
         for name,code in [
             ('getprop','case "$1" in ro.vendor.oplus.market.enname) echo "${TEST_MARKET_NAME-OnePlus 13}";;ro.product.model) echo PJZ110;;esac'),
@@ -115,7 +115,7 @@ framework() {{ cat '{self.base}/wifi'; }}
     def test_same149_scope_refuses_channel40_before_mutation(self):
         # Execute production coexistence entry, including its shared settings lock.
         for key in ['passthru_awdl_allow_concurrent','passthru_mgmt_home_channel']:(self.params/key).write_text('N\n')
-        (self.base/'wifi').write_text('Frequency: 5200MHz\n')
+        (self.base/'wifi').write_text('Wifi is enabled\nWifi is connected to test\nSupplicant state: COMPLETED, Frequency: 5200MHz, Net ID: 7,\n')
         (self.state/'coex-same149-only').touch()
         tools=self.tools
         (tools/'getprop').write_text('#!/bin/sh\nexit 0\n');(tools/'getprop').chmod(0o755)
@@ -123,8 +123,26 @@ framework() {{ cat '{self.base}/wifi'; }}
         p=self.bin/'coex-session.sh';p.write_text((ROOT/'module/bin/coex-session.sh').read_text().replace('/sys/module/qca_cld3_peach_v2/parameters',str(self.params)))
         r=subprocess.run(['sh',str(p),'prepare'],env=self.env,capture_output=True,text=True)
         self.assertNotEqual(r.returncode,0);self.assertIn('same149-only',r.stdout)
+        self.assertIn('reason=wifi_not149',r.stdout)
         self.assertFalse((self.state/'coex-session').exists())
         self.assertEqual((self.params/'passthru_awdl_allow_concurrent').read_text().strip(),'N')
+        # Old scope=auto configurations cannot opt back into cross5g.
+        (self.state/'coex-same149-only').unlink()
+        r=subprocess.run(['sh',str(p),'prepare'],env=self.env,capture_output=True,text=True)
+        self.assertNotEqual(r.returncode,0)
+        self.assertFalse((self.state/'coex-session').exists())
+        self.assertEqual((self.params/'passthru_awdl_allow_concurrent').read_text().strip(),'N')
+
+    def test_status_distinguishes_suspended_coexistence_from_manual_off(self):
+        (self.base/'wifi').write_text('Wifi is enabled\nWifi is connected to test\nSupplicant state: COMPLETED, Frequency: 5200MHz, Net ID: 7,\n')
+        data=json.loads(self.run_api('status').stdout)
+        self.assertEqual((data['coexist'],data['coexist_requested'],data['coexist_reason']),
+                         ('off','on','wifi_not149'))
+        self.run_api('apply','off','auto','fast','on')
+        (self.base/'wifi').write_text('Wifi is enabled\nWifi is connected to test\nSupplicant state: COMPLETED, Frequency: 5745MHz, Net ID: 7,\n')
+        data=json.loads(self.run_api('status').stdout)
+        self.assertEqual((data['coexist'],data['coexist_requested'],data['coexist_reason']),
+                         ('off','off','manual'))
 
     def background_session(self):
         (self.state/'ui-session').write_text('boot')

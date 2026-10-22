@@ -30,6 +30,9 @@ class ReceiveLifecycle(unittest.TestCase):
             'opairshare_bridge_pending': '0',
             'opairshare_channel_state': 'busy=0 fault=0 error=0 accepting=0 vdev=255 freq=0',
             'opairshare_awdl_rx_mac_filter': 'used=0 armed=0 pending=0 active=0 fault=0',
+            'passthru_awdl_rx_ring_select': '0',
+            **{key: 'N' for key in ['passthru_awdl_allow_concurrent', 'passthru_mgmt_home_channel']},
+            **{key: '0' for key in ['passthru_awdl_amsdu', 'passthru_awdl_phy', 'passthru_awdl_mcs', 'passthru_awdl_nss', 'passthru_awdl_collect_us']},
         }.items():
             (self.params / name).write_text(value)
         self.dispatch = self.tools / 'dispatch.py'
@@ -46,12 +49,17 @@ if name=='timeout':
 elif name=='settings':
  if f.get('setting')=='ERROR':sys.exit(1)
  print(f.get('setting','0'))
+elif name=='getprop':
+ p=b/('prop-'+a[0]);print(p.read_text() if p.exists() else '')
 elif name=='setprop':
- (b/'ready').write_text(a[1]);log('ready:'+a[1])
+ if a[0]=='debug.opairshare.receive.ready':
+  (b/'ready').write_text(a[1]);log('ready:'+a[1])
+ else:(b/('prop-'+a[0])).write_text(a[1]);log('property:'+a[0]+':'+a[1])
 elif name=='id':print('0')
 elif name=='pidof':
  if (b/'provider').exists():print('42')
-elif name=='flock':pass
+elif name=='flock':
+ if f.get('settings_locked') and a[-1]=='6':sys.exit(1)
 elif name=='sleep':
  log('tick:%d ready:%s provider:%s'%(tick,(b/'ready').read_text() if (b/'ready').exists() else '?',(b/'provider').exists()))
  tick+=1;(b/'tick').write_text(str(tick))
@@ -71,16 +79,30 @@ elif name=='dumpsys':
   if (b/'oshare').exists():print('ServiceRecord com.coloros.oshare/com.oplus.oshare.OShareServer')
   if (b/'oshare-delegate').exists():print('ServiceRecord com.coloros.oshare isFgsDelegate=true')
  elif a[:2]==['activity','service']:
+  if f.get('transfer_unknown'):print('Unrecognized provider dump');sys.exit(0)
   print('ExternalSharingService state:\\nActive Transfers (0)\\nReceive provider transferring: false')
   print('OPAIRSHARE_RECEIVE busy='+str(f.get('busy',0)))
 elif name=='am':
  log('oshare:start');(b/'oshare').touch();print('Starting service: Intent { }')
 elif name=='cmd':
+ if a==['wifi','status']:
+  if f.get('wifi_error'):sys.exit(1)
+  if f.get('wifi_malformed'):print('unavailable');sys.exit(0)
+  if not f.get('wifi_enabled',True):print('Wifi is disabled');sys.exit(0)
+  print('Wifi is enabled')
+  if f.get('connected',True):
+   print('Wifi is connected to test-network')
+   print('Supplicant state: %s, Frequency: %sMHz, Net ID: %s,'%(f.get('supplicant','COMPLETED'),f.get('frequency',5745),f.get('network',7)))
+  sys.exit(0)
  action=a[-1];log('oshare:delegate:'+action)
  if f.get('delegate_fail'):sys.exit(1)
  if action=='start':(b/'oshare-delegate').touch()
  else:(b/'oshare-delegate').unlink(missing_ok=True)
-elif name=='service':print('Parcel(00000000)')
+elif name=='service':
+ log('native:stop')
+ (b/'parameters/opairshare_channel_state').write_text('busy=0 fault=0 error=0 accepting=0 vdev=255 freq=0')
+ (b/'parameters/opairshare_awdl_rx_mac_filter').write_text('used=0 armed=0 pending=0 active=0 fault=0')
+ print('Parcel(00000000)')
 elif name=='app_process':
  op=a[2];path=pathlib.Path(a[3]);log('wifi:'+op)
  if op=='capture':path.write_text('boot')
@@ -90,21 +112,17 @@ elif name=='provider.sh':
  if a[0]=='ensure':
   if f.get('provider_fail'):sys.exit(5)
   (b/'provider').touch()
+  (b/'parameters/opairshare_channel_state').write_text('busy=0 fault=0 error=0 accepting=1 vdev=3 freq=5745')
+  (b/'parameters/opairshare_awdl_rx_mac_filter').write_text('used=1 armed=1 pending=0 active=1 fault=0 freq=5745 ')
  else:(b/'provider').unlink(missing_ok=True)
-elif name=='coex-session.sh':
- log('coex:'+a[0]);p=s/'coex-session'
- if a[0]=='prepare':
-  if f.get('coex_fail'):sys.exit(8)
-  if not (s/'coex-off').exists():p.mkdir();(p/'boot').write_text('boot')
- elif a[0]=='restore' and p.exists():(p/'boot').unlink();p.rmdir()
 elif name in ['speed-history.sh','opairshare-socket-buffer']:pass
 else:raise RuntimeError((name,a))
 ''')
         self.dispatch.chmod(0o755)
-        for name in ['timeout', 'settings', 'setprop', 'id', 'pidof', 'flock',
+        for name in ['timeout', 'settings', 'setprop', 'getprop', 'id', 'pidof', 'flock',
                      'sleep', 'dumpsys', 'am', 'cmd', 'service', 'app_process']:
             (self.tools / name).symlink_to(self.dispatch)
-        for name in ['provider.sh', 'coex-session.sh', 'speed-history.sh']:
+        for name in ['provider.sh', 'speed-history.sh']:
             # ui-lifecycle executes these with sh, so use an executable wrapper.
             wrapper = self.bin / name
             target = self.tools / name
@@ -126,7 +144,7 @@ kernel_matches() {{ return 0; }}
 pid_is() {{ return 0; }}
 framework() {{ "$@"; }}
 ''')
-        for name in ['ui-lifecycle.sh', 'receive-session.sh', 'transfer-idle.sh']:
+        for name in ['ui-lifecycle.sh', 'receive-session.sh', 'transfer-idle.sh', 'coex-session.sh', 'coex-wifi.sh']:
             code = (ROOT / 'module/bin' / name).read_text()
             code = code.replace('/system/bin/sh', '/bin/sh')
             code = code.replace('/system/bin/', str(self.tools) + '/')
@@ -153,7 +171,7 @@ framework() {{ "$@"; }}
 
     def test_boot_with_native_receive_off_starts_background_without_activity(self):
         log = self.run_lifecycle([{'setting': '0'}] * 4)
-        self.assertIn('coex:prepare', log)
+        self.assertIn('property:debug.opairshare.discovery:same149', log)
         self.assertIn('provider:ensure', log)
         self.assertIn('tick:0 ready:1 provider:True', log)
         self.assertEqual(log.count('oshare:start'), 1)
@@ -168,14 +186,14 @@ framework() {{ "$@"; }}
         self.assertIn('tick:0 ready:1 provider:True', log)
         self.assertIn('tick:1 ready:1 provider:True', log)
         self.assertIn('tick:2 ready:1 provider:True', log)
-        self.assertEqual(log.count('coex:prepare'), 1)
+        self.assertEqual(log.count('property:debug.opairshare.discovery:same149'), 1)
         self.assertEqual(log.count('oshare:start'), 1)
         self.assertNotIn('provider:release', log)
         self.assertNotIn('wifi:', log)
 
     def test_native_settings_errors_do_not_gate_module_owned_reception(self):
         log = self.run_lifecycle([{'setting': setting} for setting in ['0', 'null', '3', 'ERROR']])
-        self.assertEqual(log.count('coex:prepare'), 1)
+        self.assertEqual(log.count('property:debug.opairshare.discovery:same149'), 1)
         for tick in range(4):
             self.assertIn(f'tick:{tick} ready:1 provider:True', log)
 
@@ -186,7 +204,7 @@ framework() {{ "$@"; }}
         lines = log.splitlines()
         release = lines.index('provider:release')
         self.assertGreater(release, lines.index('tick:4 ready:0 provider:True'))
-        self.assertIn('coex:restore', log)
+        self.assertIn('property:debug.opairshare.discovery:', log)
         self.assertNotIn('wifi:', log)
         self.assertFalse((self.state / 'ui-session').exists())
         self.assertGreater(lines.index('oshare:delegate:stop'), lines.index('tick:4 ready:0 provider:True'))
@@ -216,10 +234,100 @@ framework() {{ "$@"; }}
         self.assertIn('tick:0 ready:1 provider:True', log)
         self.assertIn('tick:1 ready:0 provider:False', log)
 
-    def test_coex_prepare_failure_never_advertises(self):
-        log = self.run_lifecycle([{'setting': '2', 'coex_fail': True}] * 2)
+    def test_unsupported_startup_never_advertises(self):
+        log = self.run_lifecycle([{'setting': '2', 'frequency': 5200}] * 2)
         self.assertNotIn('provider:ensure', log)
         self.assertNotIn('ready:1', log)
+
+    def test_channel40_suspends_then_channel149_restores_background(self):
+        log = self.run_lifecycle([{'frequency': 5200}, {}, {}])
+        self.assertIn('tick:0 ready:0 provider:False', log)
+        self.assertIn('tick:1 ready:1 provider:True', log)
+        self.assertFalse((self.state / 'coex-off').exists())
+        self.assertFalse((self.state / 'coex-wifi-blocked').exists())
+        self.assertNotIn('wifi:', log)
+
+    def test_channel_change_closes_gate_and_waits_for_busy_transfer(self):
+        log = self.run_lifecycle([{}] + [{'frequency': 5200, 'busy': 1}] * 2 +
+                                 [{'frequency': 5200}, {}, {}])
+        lines = log.splitlines()
+        self.assertIn('tick:1 ready:0 provider:True', lines)
+        self.assertIn('tick:2 ready:0 provider:True', lines)
+        self.assertGreater(lines.index('provider:release'), lines.index('tick:2 ready:0 provider:True'))
+        self.assertIn('tick:3 ready:0 provider:False', lines)
+        self.assertIn('tick:4 ready:1 provider:True', lines)
+        self.assertEqual(log.count('property:debug.opairshare.discovery:same149'), 2)
+        self.assertNotIn('wifi:', log)
+
+    def test_disconnect_reconnect_during_transfer_rebuilds_after_idle(self):
+        log = self.run_lifecycle([{}, {'connected': False, 'busy': 1},
+                                 {'connected': False, 'transfer_unknown': True},
+                                 {'busy': 1}, {}, {}, {}])
+        lines = log.splitlines()
+        for tick in [1, 2, 3]:
+            self.assertIn(f'tick:{tick} ready:0 provider:True', lines)
+        self.assertGreater(lines.index('provider:release'), lines.index('tick:3 ready:0 provider:True'))
+        self.assertIn('tick:5 ready:1 provider:True', lines)
+        self.assertEqual(log.count('provider:release'), 1)
+        self.assertNotIn('wifi:', log)
+
+    def test_same149_network_change_rebuilds_without_wifi_reconnection(self):
+        log = self.run_lifecycle([{}, {'network': 8, 'busy': 1},
+                                 {'network': 8}, {'network': 8}, {'network': 8}])
+        lines = log.splitlines()
+        self.assertIn('tick:1 ready:0 provider:True', lines)
+        self.assertIn('tick:2 ready:0 provider:False', lines)
+        self.assertIn('tick:3 ready:1 provider:True', lines)
+        self.assertEqual((self.state / 'coex-session/network').read_text().strip(), '8')
+        self.assertNotIn('wifi:', log)
+
+    def test_open_ui_downgrades_to_legacy_and_upgrades_after_channel_returns(self):
+        log = self.run_lifecycle([{'foreground': 'open'},
+                                 {'foreground': 'open', 'frequency': 5200},
+                                 {'foreground': 'open', 'frequency': 5200},
+                                 {'foreground': 'open'}, {'foreground': 'open'}, {}])
+        lines = log.splitlines()
+        self.assertIn('tick:1 ready:0 provider:False', lines)
+        self.assertIn('tick:2 ready:0 provider:True', lines)
+        self.assertIn('tick:3 ready:0 provider:False', lines)
+        self.assertIn('tick:4 ready:1 provider:True', lines)
+        self.assertEqual(log.count('wifi:capture'), 1)
+        self.assertEqual(log.count('wifi:restore'), 1)
+        self.assertFalse((self.state / 'session-wifi').exists())
+
+    def test_manual_off_during_suspension_prevents_auto_recovery(self):
+        log = self.run_lifecycle([{}, {'frequency': 5200}, {'coex_off': True}, {}, {}])
+        self.assertEqual(log.count('provider:ensure'), 1)
+        self.assertIn('tick:4 ready:0 provider:False', log)
+        self.assertTrue((self.state / 'coex-off').exists())
+
+    def test_unknown_wifi_never_starts_legacy_fallback_and_recovers(self):
+        log = self.run_lifecycle([{}, {'wifi_error': True, 'foreground': 'open'},
+                                 {'wifi_malformed': True, 'foreground': 'open'}, {}, {}])
+        self.assertIn('tick:1 ready:0 provider:False', log)
+        self.assertIn('tick:2 ready:0 provider:False', log)
+        self.assertIn('tick:3 ready:1 provider:True', log)
+        self.assertNotIn('wifi:', log)
+
+    def test_background_disable_can_drain_while_settings_holds_lock(self):
+        log = self.run_lifecycle([{}, {'coex_off': True, 'settings_locked': True}, {}])
+        self.assertIn('tick:1 ready:0 provider:False', log)
+        self.assertEqual(log.count('provider:release'), 1)
+        self.assertFalse((self.state / 'ui-session').exists())
+
+    def test_ready_rechecks_live_connection_and_network(self):
+        (self.state / 'ui-session').write_text('boot')
+        p = self.state / 'coex-session'
+        p.mkdir()
+        (p / 'boot').write_text('boot')
+        (p / 'network').write_text('7')
+        for frame in [{'frequency': 5200}, {'connected': False}, {'network': 8},
+                      {'wifi_error': True}, {'supplicant': 'ASSOCIATING'}, {}]:
+            with self.subTest(frame=frame):
+                self.frames([frame])
+                result = self.run_script('receive-session.sh', 'ready')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), '0' if frame else '1')
 
     def test_ready_requires_current_boot_independently_of_native_setting(self):
         for state in ['0', '1', '2']:
@@ -227,6 +335,8 @@ framework() {{ "$@"; }}
             (self.state / 'ui-session').write_text('boot')
             p = self.state / 'coex-session'
             p.mkdir(exist_ok=True)
+            (p / 'network').write_text('7')
+            (p / 'frequency').write_text('5745')
             for boot in ['old-boot', 'boot']:
                 (p / 'boot').write_text(boot)
                 result = self.run_script('receive-session.sh', 'ready')

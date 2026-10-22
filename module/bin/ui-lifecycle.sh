@@ -4,6 +4,7 @@
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
+. "$MODDIR/bin/coex-wifi.sh"
 . "$MODDIR/bin/kernel-identity.sh"
 init_state
 exec 8> "$STATE/provider.flock"
@@ -55,9 +56,10 @@ close_session() {
     /system/bin/sh "$MODDIR/bin/receive-session.sh" clear 8>&- || return 8
     # Inspect App transfer state before releasing the original provider.
     /system/bin/sh "$MODDIR/bin/transfer-idle.sh" 8>&- || return 9
-    [ "$(foreground_state)" = closed ] || return 10
-    if [ ! -e "$STATE/coex-off" ] &&
-       [ "$(/system/bin/sh "$MODDIR/bin/receive-session.sh" wanted 8>&-)" = 1 ];then return 10;fi
+    if [ "${1:-normal}" != recover ];then
+        [ "$(foreground_state)" = closed ] || return 10
+        if [ "$(/system/bin/sh "$MODDIR/bin/receive-session.sh" wanted 8>&-)" = 1 ];then return 10;fi
+    fi
     /system/bin/timeout -k 2 35 /system/bin/sh "$MODDIR/bin/provider.sh" release 8>&- || return 6
     [ -z "$(pidof "$PKG" || true)" ] || return 6
     reply=$(framework timeout 15 service call "$SERVICE" 2 i32 1 i32 4) || return 6
@@ -74,6 +76,52 @@ close_session() {
     echo 'UI_CLOSED_RADIO_RELEASED_DRIVER_RETAINED'
 }
 
+# Serialize automatic suspension with WebUI preference changes. The manual
+# coex-off marker is never rewritten here; channel149 can restore only opt-in.
+monitor_coex_wifi() {
+    coex_recover=0
+    exec 6> "$STATE/settings.flock"
+    if ! flock -n 6 6>&6;then
+        exec 6>&-
+        # settings.sh holds this lock while waiting for an idle background
+        # session to close. Honor its off request without mutating preferences.
+        if [ -e "$STATE/coex-off" ] && [ -d "$STATE/coex-session" ];then
+            coex_recover=1;return 0
+        fi
+        return 1
+    fi
+    if coex_requested;then
+        if coex_wifi_read;then
+            if [ -e "$STATE/coex-wifi-blocked" ];then
+                rm -f "$STATE/coex-wifi-blocked" || { exec 6>&-;return 1; }
+                echo 'COEX_WIFI_ELIGIBLE channel=149'
+            fi
+            if [ -d "$STATE/coex-session" ] &&
+               { [ "$(cat "$STATE/coex-session/frequency" 2>/dev/null)" != 5745 ] ||
+                 [ "$(cat "$STATE/coex-session/network" 2>/dev/null)" != "$coex_wifi_network" ]; };then
+                if [ ! -e "$STATE/coex-session/invalidated" ];then
+                    touch "$STATE/coex-session/invalidated" || { exec 6>&-;return 1; }
+                    echo 'COEX_WIFI_CHANGED: rebuilding session when idle'
+                fi
+            fi
+            # A foreground legacy session must stop before upgrading to coex.
+            if [ -e "$STATE/ui-session" ] && [ ! -d "$STATE/coex-session" ];then coex_recover=1;fi
+        else
+            if [ "$(cat "$STATE/coex-wifi-blocked" 2>/dev/null)" != "$coex_wifi_reason" ];then
+                printf '%s\n' "$coex_wifi_reason" > "$STATE/coex-wifi-blocked.tmp" &&
+                    mv "$STATE/coex-wifi-blocked.tmp" "$STATE/coex-wifi-blocked" || { exec 6>&-;return 1; }
+                echo "COEX_WIFI_SUSPENDED reason=$coex_wifi_reason frequency=${coex_wifi_frequency:-unknown}"
+            fi
+            [ ! -d "$STATE/coex-session" ] || touch "$STATE/coex-session/invalidated" || { exec 6>&-;return 1; }
+        fi
+    else
+        rm -f "$STATE/coex-wifi-blocked" || { exec 6>&-;return 1; }
+        [ ! -d "$STATE/coex-session" ] || touch "$STATE/coex-session/invalidated" || { exec 6>&-;return 1; }
+    fi
+    if [ -e "$STATE/coex-session/invalidated" ];then coex_recover=1;fi
+    exec 6>&-
+}
+
 off_samples=0
 provider_samples=0
 provider_failures=0
@@ -88,6 +136,26 @@ while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&
         echo 'Native server lost; explicit recovery required'; exit 6
     fi
     printf '%s %s\n' "$(boot_id)" "$$" > "$STATE/supervisor-ready"
+    if ! monitor_coex_wifi;then
+        /system/bin/sh "$MODDIR/bin/receive-session.sh" clear 8>&-
+        receive_published=0
+        sleep 1;continue
+    fi
+    /system/bin/sh "$MODDIR/bin/coex-session.sh" tick 8>&- || echo 'COEX_RX_RETRY: retaining session'
+    if [ "$coex_recover" = 1 ];then
+        # Close admission immediately, including while the share UI is open.
+        # Busy/unknown transfers retain the provider, RX host and snapshots.
+        /system/bin/sh "$MODDIR/bin/receive-session.sh" clear 8>&-
+        receive_published=0
+        if close_session recover;then
+            provider_failures=0;provider_ready=0;provider_samples=0;receive_samples=10
+            echo 'COEX_WIFI_SESSION_RELEASED'
+        else
+            rc=$?
+            if [ "$rc" != 9 ];then echo "Wi-Fi recovery uncertain rc=$rc; session retained";exit "$rc";fi
+        fi
+        sleep 1;continue
+    fi
     # Only current Mosey sockets on mosey0; leave global TCP settings alone.
     socket_owner=$(pidof "$PKG" || true)
     case "$socket_owner" in
@@ -101,11 +169,10 @@ while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&
             fi
             ;;
     esac
-    /system/bin/sh "$MODDIR/bin/coex-session.sh" tick 8>&- || echo 'COEX_RX_RETRY: retaining session'
     receive_requested=$(/system/bin/sh "$MODDIR/bin/receive-session.sh" wanted 8>&-)
     receive_eligible=0
     receive_samples=$((receive_samples+1))
-    if [ "$receive_requested" = 1 ] && [ ! -e "$STATE/coex-off" ];then receive_eligible=1;fi
+    if [ "$receive_requested" = 1 ];then receive_eligible=1;fi
     if [ "$receive_eligible" != 1 ] && [ "$receive_published" = 1 ];then
         /system/bin/sh "$MODDIR/bin/receive-session.sh" clear 8>&-
         receive_published=0
@@ -117,11 +184,19 @@ while same_boot "$STATE/stack-boot" && [ ! -e "$STATE/disabled" ] &&
     if [ "$foreground" = open ] || [ "$receive_eligible" = 1 ]; then
         off_samples=0
         if [ ! -e "$STATE/ui-session" ]; then
+            # An unreadable framework state must not trigger legacy Wi-Fi
+            # disconnection as a side effect of an automatic fallback.
+            if coex_requested && [ "$(cat "$STATE/coex-wifi-blocked" 2>/dev/null)" = wifi_unavailable ];then
+                sleep 1;continue
+            fi
             # A stale same-boot snapshot belongs to an interrupted session.
             [ ! -e "$STATE/session-wifi" ] || { echo 'Unrestored UI session; stop required'; exit 8; }
             exec 6> "$STATE/settings.flock"
             if ! flock -n 6 6>&6;then exec 6>&-;sleep 1;continue;fi
-            if ! OPAIRSHARE_SETTINGS_LOCK_HELD=1 /system/bin/sh "$MODDIR/bin/coex-session.sh" prepare 8>&- 6>&6; then
+            # Unsupported connections use the ordinary foreground-only path.
+            # The automatic marker preserves the user's preference for recovery.
+            if [ ! -e "$STATE/coex-wifi-blocked" ] &&
+               ! OPAIRSHARE_SETTINGS_LOCK_HELD=1 /system/bin/sh "$MODDIR/bin/coex-session.sh" prepare 8>&- 6>&6; then
                 /system/bin/sh "$MODDIR/bin/coex-session.sh" restore 8>&- || exit 8
                 exec 6>&-
                 sleep 3

@@ -26,6 +26,20 @@ window.ksu.exec=(command,options,callback)=>queueMicrotask(()=>window[callback](
 await assert.rejects(()=>api.API.exportLogs(),/路径无效/);
 console.log('Single coexist toggle preserves hidden defaults; log export command and path validation passed.');
 
+// Temporary suspension must not overwrite the user's opt-in on save/readback.
+const suspended={...state,coexist:'off',coexist_requested:'on',coexist_reason:'wifi_not149'};
+assert.equal(api.configOf(suspended).coexist,'on');
+window.ksu.exec=(command,options,callback)=>{
+ calls.push(command);
+ if(command.endsWith('apply off auto fast on'))suspended.coexist_requested='off';
+ queueMicrotask(()=>window[callback](0,JSON.stringify(suspended),''));
+};
+assert.equal((await api.API.setCoexist(true)).coexist,'off');
+assert.ok(calls.at(-2).endsWith('apply on auto fast on'));
+assert.equal((await api.API.setCoexist(false)).coexist_requested,'off');
+assert.ok(calls.at(-2).endsWith('apply off auto fast on'));
+console.log('Suspended coexistence retains opt-in and accepts manual off.');
+
 // Names cross the root shell as validated hex, including quotes and shell punctuation.
 const name="我的 OnePlus 📱 ' $(touch nope); `id`";
 assert.equal(api.nameHex(name),Buffer.from(name).toString('hex'));

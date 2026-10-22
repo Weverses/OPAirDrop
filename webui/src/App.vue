@@ -34,6 +34,7 @@ const nameDraft=ref('');
 const nameLength=computed(()=>[...nameDraft.value.trim()].length);
 const pageTitle=computed(()=>tab.value===0?'AirDrop':settingsView.value==='about'?'关于':settingsView.value==='logs'?'日志':settingsView.value==='name'?'AirDrop 名称':'设置');
 const editable=computed(()=>!!state.value&&state.value.editable==='on'&&!busy.value);
+const coexistSummary=computed(()=>{const reason=state.value?.coexist_reason;return reason==='wifi_not149'?'共存已暂停：仅支持 Wi-Fi 信道 149，回到 149 后自动恢复':reason==='wifi_disconnected'?'共存已暂停：连接 Wi-Fi 信道 149 后自动恢复':reason==='wifi_unavailable'?'共存已暂停：正在等待确认 Wi-Fi 状态':reason==='recovering'?'正在等待传输结束并恢复共存':'仅在 Wi-Fi 信道 149 下共存；关闭后不自动恢复';});
 const live=computed(()=>history.value?.live);
 const recorderOn=computed(()=>history.value?.recorder==='on');
 const recording=computed(()=>recorderOn.value&&live.value?.state==='recording');
@@ -43,11 +44,11 @@ function speed(value=0){return (value/1000000).toFixed(2);}
 function size(value=0){return value>=1e9?(value/1e9).toFixed(2)+' GB':value>=1e6?(value/1e6).toFixed(2)+' MB':(value/1000).toFixed(1)+' KB';}
 function time(epoch:number){return new Date(epoch*1000).toLocaleString('zh-CN',{hour12:false});}
 async function refresh(){if(busy.value)return;busy.value=true;error.value='';try{state.value=await API.status();updated.value=new Date().toLocaleTimeString('zh-CN',{hour12:false});}catch(e){error.value=e instanceof Error?e.message:String(e);}finally{busy.value=false;}}
-async function changeCoexist(on:boolean){if(!editable.value)return;busy.value=true;error.value='';try{state.value=await API.setCoexist(on);showSnackbar({message:on?'共存已开启':'共存已关闭'});}catch(e){error.value=e instanceof Error?e.message:String(e);showSnackbar({message:error.value});}finally{busy.value=false;}}
+async function changeCoexist(on:boolean){if(!editable.value)return;busy.value=true;error.value='';try{state.value=await API.setCoexist(on);showSnackbar({message:on?(state.value.coexist==='on'?'共存已开启':'已启用，连接信道 149 后自动恢复共存'):'共存已关闭'});}catch(e){error.value=e instanceof Error?e.message:String(e);showSnackbar({message:error.value});}finally{busy.value=false;}}
 async function refreshHistory(){if(historyBusy.value)return;historyBusy.value=true;try{history.value=await API.history();}catch(e){error.value=e instanceof Error?e.message:String(e);}finally{historyBusy.value=false;}}
 let timer:ReturnType<typeof setInterval>|undefined;
-watch(tab,next=>{settingsView.value='main';if(next===0)refreshHistory();});
-onMounted(()=>{refresh();refreshHistory();timer=setInterval(()=>{if(tab.value===0&&!document.hidden)refreshHistory();},2000);});
+watch(tab,next=>{settingsView.value='main';refresh();if(next===0)refreshHistory();});
+onMounted(()=>{refresh();refreshHistory();timer=setInterval(()=>{if(!document.hidden){if(tab.value===0)refreshHistory();else if(settingsView.value==='main')refresh();}},2000);});
 async function readLogs(){if(logBusy.value)return;logBusy.value=true;try{logs.value=await API.logs()||'暂无日志';}catch(e){logs.value=e instanceof Error?e.message:String(e);}finally{logBusy.value=false;}}
 async function exportLogs(){if(exportBusy.value)return;exportBusy.value=true;try{exportedPath.value=await API.exportLogs();showSnackbar({message:'日志已保存到 Download/OPAirShare'});}catch(e){error.value=e instanceof Error?e.message:String(e);showSnackbar({message:error.value});}finally{exportBusy.value=false;}}
 function editName(){if(!state.value||busy.value)return;nameDraft.value=state.value.airdrop_name_custom;settingsView.value='name';}
@@ -82,7 +83,7 @@ onBeforeUnmount(()=>{if(timer)clearInterval(timer);});
    </template>
    <template v-else-if="settingsView==='main'">
     <MiuixSmallTitle text="连接"/>
-    <MiuixCard><MiuixBasicComponent title="与 Wi-Fi 共存"><template #end><MiuixSwitch :model-value="state?.coexist==='on'" :disabled="!editable" aria-label="与Wi-Fi共存" @update:model-value="changeCoexist($event)"/></template></MiuixBasicComponent></MiuixCard>
+    <MiuixCard><MiuixBasicComponent title="与 Wi-Fi 共存" :summary="coexistSummary"><template #end><MiuixSwitch :model-value="(state?.coexist_requested??state?.coexist)==='on'" :disabled="!editable" aria-label="与Wi-Fi共存" @update:model-value="changeCoexist($event)"/></template></MiuixBasicComponent></MiuixCard>
     <MiuixSmallTitle text="设备"/>
     <MiuixCard><MiuixBasicComponent title="AirDrop 名称" :summary="state?.airdrop_name||'读取中'" :disabled="busy||!state" clickable @click="editName"><template #end><span class="entry-arrow">›</span></template></MiuixBasicComponent></MiuixCard>
     <MiuixSmallTitle text="通用"/>
