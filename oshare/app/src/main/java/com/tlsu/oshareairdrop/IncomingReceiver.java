@@ -86,7 +86,7 @@ final class IncomingReceiver {
     static void action(String action, long id, String session) {
         IncomingTransfers.Task<Object> task = TASKS.require(id, session);
         if ("accept".equals(action)) {
-            if (!ReceiveController.admitting()) throw new IllegalStateException("接收已关闭或界面已断开");
+            if (!ReceiveController.acceptingExisting()) throw new IllegalStateException("接收已关闭或界面已断开");
             if (SystemClock.elapsedRealtime() - task.created > 60_000)
                 throw new IllegalStateException("接收邀请已超时");
             TASKS.accept(id, session);

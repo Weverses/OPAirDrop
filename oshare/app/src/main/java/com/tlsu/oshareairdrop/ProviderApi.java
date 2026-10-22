@@ -124,8 +124,9 @@ public final class ProviderApi {
             Object p = provider();
             Method m = p.getClass().getDeclaredMethod(method, signature);
             m.setAccessible(true);
-            Object result = (method.equals("g") || method.equals("i") || method.equals("k"))
-                    ? DiscoverySession.internal(() -> m.invoke(p, args)) : m.invoke(p, args);
+            Object result = ShareMode.bridgeCall(() ->
+                    (method.equals("g") || method.equals("i") || method.equals("k"))
+                    ? DiscoverySession.internal(() -> m.invoke(p, args)) : m.invoke(p, args));
             int code = result instanceof Number ? ((Number) result).intValue() : 0;
             Log.i(TAG, "apl." + method + " -> " + code);
             return code;

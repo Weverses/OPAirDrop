@@ -20,8 +20,10 @@ android {
         applicationId = "com.tlsu.oshareairdrop"
         minSdk = 35
         targetSdk = 37
-        versionCode = moduleProperties.getProperty("versionCode").toInt()
-        versionName = moduleProperties.getProperty("version")
+        versionCode = providers.gradleProperty("opairshareVersionCode").orNull?.toInt()
+            ?: moduleProperties.getProperty("versionCode").toInt()
+        versionName = providers.gradleProperty("opairshareVersionName").orNull
+            ?: moduleProperties.getProperty("version")
     }
 
     buildFeatures { buildConfig = true }

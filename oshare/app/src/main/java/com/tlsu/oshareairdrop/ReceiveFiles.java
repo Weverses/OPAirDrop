@@ -67,6 +67,8 @@ final class ReceiveFiles {
 
     static JSONArray publish(Context context, JSONArray files) throws Exception {
         ContentResolver resolver = context.getContentResolver();
+        // Snapshot once for the entire batch. A concurrent WebUI edit affects the next save.
+        String configured = ReceiveDirectory.decode(android.provider.Settings.Global.getString(resolver, ReceiveDirectory.SETTING));
         List<Uri> created = new ArrayList<>();
         JSONArray result = new JSONArray();
         try {
@@ -78,10 +80,12 @@ final class ReceiveFiles {
                         : MediaStore.Downloads.EXTERNAL_CONTENT_URI;
                 String folder = type.startsWith("image/") ? Environment.DIRECTORY_PICTURES
                         : type.startsWith("video/") ? Environment.DIRECTORY_MOVIES : Environment.DIRECTORY_DOWNLOADS;
+                String directory = configured.isEmpty() ? folder + "/OPAirShare" : configured;
+                if (!configured.isEmpty()) collection = MediaStore.Files.getContentUri("external");
                 ContentValues values = new ContentValues();
                 values.put(MediaStore.MediaColumns.DISPLAY_NAME, safeName(file.getString("name")));
                 values.put(MediaStore.MediaColumns.MIME_TYPE, type);
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, folder + "/OPAirShare");
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, directory);
                 values.put(MediaStore.MediaColumns.IS_PENDING, 1);
                 Uri destination = resolver.insert(collection, values);
                 if (destination == null) throw new IllegalStateException("无法创建保存文件");
@@ -100,8 +104,13 @@ final class ReceiveFiles {
                     }
                 }
                 if (expected >= 0 && bytes != expected) throw new IllegalStateException("文件大小不一致：" + file.getString("name"));
-                result.put(new JSONObject().put("name", file.getString("name")).put("size", bytes)
-                        .put("mime", type).put("uri", destination.toString()));
+                String name = file.getString("name");
+                try (android.database.Cursor row = resolver.query(destination, new String[]{
+                        MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.RELATIVE_PATH}, null, null, null)) {
+                    if (row != null && row.moveToFirst()) { name = row.getString(0); directory = row.getString(1); }
+                }
+                result.put(new JSONObject().put("name", name).put("size", bytes)
+                        .put("directory", directory).put("mime", type).put("uri", destination.toString()));
             }
             // Commit only after the entire batch has been copied and checked.
             for (Uri uri : created) {

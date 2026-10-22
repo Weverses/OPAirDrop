@@ -13,8 +13,8 @@ javac -cp "$sdk/platforms/android-37.0/android.jar" -d "$work/classes" \
     "$root"/tests/android/com/tlsu/oshareairdrop/*.java \
     "$src/ProviderApi.java" "$src/OutgoingTransfers.java" "$src/CallbackFactory.java" \
     "$src/ProviderHolder.java" "$src/HostContext.java" "$src/IncomingTransfers.java" \
-    "$src/AirDropName.java" "$src/IncomingReceiver.java" "$src/ReceiveFiles.java" "$src/BridgeMessenger.java" \
-    "$src/DiscoverySession.java" "$src/StartupTrace.java"
+    "$src/AirDropName.java" "$src/ReceiveDirectory.java" "$src/IncomingReceiver.java" "$src/ReceiveFiles.java" "$src/BridgeMessenger.java" \
+    "$src/DiscoverySession.java" "$src/ShareMode.java" "$src/ShareModeRuntime.java" "$src/StartupTrace.java"
 jar cf "$work/classes.jar" -C "$work/classes" .
 "$sdk/build-tools/36.0.0/d8" --lib "$sdk/platforms/android-37.0/android.jar" \
     --output "$work/test.jar" "$work/classes.jar"

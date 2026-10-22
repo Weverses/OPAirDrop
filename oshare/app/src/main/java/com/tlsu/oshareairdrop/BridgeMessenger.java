@@ -228,6 +228,10 @@ public final class BridgeMessenger {
         try {
             command = new JSONObject(json);
             String cmd = command.optString("cmd", "");
+            if ((!ShareModeRuntime.current().usesOShare() || ShareModeRuntime.switching()) &&
+                    (cmd.startsWith("send") || cmd.equals("discover_start") || cmd.equals("advertise_start")
+                            || cmd.equals("set_download_dir") || cmd.equals("retry_publish")))
+                throw new IllegalStateException("AirDrop 分享入口正在切换或已停用 OShare");
             Log.i(TAG, "bridge command: " + cmd);
             switch (cmd) {
                 case "ping":

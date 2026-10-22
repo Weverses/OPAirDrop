@@ -179,7 +179,7 @@ public final class OShareReceiveBridge {
     }
 
     private static void connectBackground() {
-        if (!installed) return;
+        if (!installed || !ShareModeRuntime.current().usesOShare() || ShareModeRuntime.switching()) return;
         if (server == null || !server.getBinder().isBinderAlive()) {
             disconnected(server);
             try { BridgeMessenger.connect(app, CLIENT); }
@@ -261,7 +261,7 @@ public final class OShareReceiveBridge {
                 && nativePresenter.update(task.json, task.notification, task.title(), task.summary());
         Screen screen = currentScreen();
         if (screen != null && session.equals(screen.session)) {
-            if (nativeShown && !screen.manual) { screen.dismiss(); screen.activity.finish(); }
+            if (ReceiveUiPolicy.hideDialog(task.terminal(), nativeShown, screen.manual)) { screen.dismiss(); screen.activity.finish(); }
             else screen.render();
         }
         if (screen != null && old == null && task.pending() && !task.terminal()) {
@@ -277,6 +277,13 @@ public final class OShareReceiveBridge {
             catch (Throwable failure) { launching = ""; log("receive invitation available in notification", failure); }
             MAIN.postDelayed(() -> { if (session.equals(launching)) launching = ""; }, 5000);
         }
+        if (ReceiveUiPolicy.showCompletion(old != null, old != null && old.json.optBoolean("published"),
+                task.terminal(), task.json.optBoolean("published"), task.phase()) && canPresent()) {
+            // Do not cover another active invitation/transfer. Its notification retains the file entry.
+            Task shown = screen == null ? null : TASKS.get(screen.session);
+            if ((screen == null || (!session.equals(screen.session) && (shown == null || shown.terminal())))
+                    && launching.isEmpty()) openSession(session);
+        }
     }
 
     private static void nativePresentationChanged(String session) {
@@ -286,7 +293,7 @@ public final class OShareReceiveBridge {
         notifyTask(task);
         Screen screen = currentScreen();
         if (screen != null && session.equals(screen.session)) {
-            if (shown && !screen.manual) { screen.dismiss(); screen.activity.finish(); }
+            if (ReceiveUiPolicy.hideDialog(task.terminal(), shown, screen.manual)) { screen.dismiss(); screen.activity.finish(); }
             else screen.render();
         }
     }
@@ -536,6 +543,12 @@ public final class OShareReceiveBridge {
             } else text.append("\n文件信息未知");
             String message = json.optString("message");
             if (!message.isEmpty()) text.append("\n").append(message);
+            java.util.LinkedHashSet<String> directories = new java.util.LinkedHashSet<>();
+            if (json.optBoolean("published") && files != null) for (int i = 0; i < files.length(); i++) {
+                JSONObject file = files.optJSONObject(i);
+                if (file != null && !file.optString("directory").isEmpty()) directories.add(file.optString("directory"));
+            }
+            for (String directory : directories) text.append("\n保存位置：").append(directory);
             return text.toString();
         }
     }

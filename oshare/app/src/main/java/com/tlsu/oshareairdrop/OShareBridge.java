@@ -95,11 +95,11 @@ public final class OShareBridge {
                 // it again (or retaining peers already reported lost).
                 for (Object device : (java.util.List<?>) chain.proceed())
                     if (device == null || !symbols.key(device).startsWith(PREFIX)) result.add(device);
-                result.addAll(DEVICES.values());
+                if (ShareModeRuntime.current().usesOShare()) result.addAll(DEVICES.values());
                 return result;
             }));
             HOOKS.add(module.hook(symbols.method("manager.get")).intercept(chain -> {
-                Object device = DEVICES.get((String) chain.getArg(0));
+                Object device = ShareModeRuntime.current().usesOShare() ? DEVICES.get((String) chain.getArg(0)) : null;
                 return device != null ? device : chain.proceed();
             }));
             HOOKS.add(module.hook(symbols.method("activity.resume")).intercept(chain -> {
@@ -149,6 +149,23 @@ public final class OShareBridge {
                 return null;
             }));
             module.log(Log.INFO, TAG, "OShare DexKit discovery, device list, send and cancel hooks installed");
+            MAIN.post(new Runnable() {
+                private ShareMode previous = ShareModeRuntime.current();
+                @Override public void run() {
+                    ShareMode current = ShareModeRuntime.current();
+                    if (current != previous) {
+                        previous = current;
+                        DEVICES.clear();
+                        connectionGeneration++;
+                        connecting = false;
+                        try { refresh(); } catch (Exception failure) { Log.w(TAG, "mode refresh failed", failure); }
+                    }
+                    Activity panel = activity.get();
+                    if (current.usesOShare() && !ShareModeRuntime.switching() && server == null && !connecting
+                            && isCurrentActivity(panel)) connect(panel);
+                    MAIN.postDelayed(this, 1000);
+                }
+            });
         } catch (Throwable failure) {
             for (HookHandle handle : HOOKS) try { handle.unhook(); }
             catch (Throwable cleanup) { failure.addSuppressed(cleanup); }
@@ -162,7 +179,7 @@ public final class OShareBridge {
     }
 
     private static void connect(Activity current) {
-        if (!isCurrentActivity(current)) return;
+        if (!isCurrentActivity(current) || !ShareModeRuntime.current().usesOShare() || ShareModeRuntime.switching()) return;
         if (server != null && server.getBinder().isBinderAlive()) {
             StartupTrace.mark("SHARE_WARM_DISCOVERY_REQUEST");
             command("discover_start", null);
@@ -181,7 +198,8 @@ public final class OShareBridge {
     }
 
     private static boolean pending(Activity current, int generation) {
-        return isCurrentActivity(current) && connecting && generation == connectionGeneration;
+        return ShareModeRuntime.current().usesOShare() && !ShareModeRuntime.switching()
+                && isCurrentActivity(current) && connecting && generation == connectionGeneration;
     }
 
     private static void boot(Activity current, int generation, int attempt) {
@@ -328,6 +346,9 @@ public final class OShareBridge {
     }
 
     private static void send(Intent intent, String key) {
+        if (!ShareModeRuntime.current().usesOShare() || ShareModeRuntime.switching()) {
+            toast("分享入口正在切换，请稍后重试");return;
+        }
         if (ACTIVE.contains(key)) {
             Long started = STARTED.get(key);
             if (started != null && android.os.SystemClock.elapsedRealtime() - started

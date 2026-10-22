@@ -27,11 +27,14 @@ final class ReceiveController {
         if (installed) return;
         ArrayList<HookHandle> handles = new ArrayList<>();
         try {
+            ShareMode mode = ShareModeRuntime.initialize(context);
             Class<?> controller = loader.loadClass("cad");
             Class<?> options = loader.loadClass("apj");
             advertise = controller.getDeclaredMethod("f", options, loader.loadClass("aqa"));
             advertise.setAccessible(true);
             handles.add(module.hook(advertise).intercept(chain -> {
+                Integer disabled = ShareModeRuntime.result("f");
+                if (disabled != null) return disabled;
                 if (INTERNAL.get()) return chain.proceed();
                 synchronized (ReceiveController.class) {
                     previousOptions = chain.getArg(0); previousCallback = chain.getArg(1); previousListening = true;
@@ -40,6 +43,8 @@ final class ReceiveController {
                 return chain.proceed();
             }));
             handles.add(module.hook(controller.getDeclaredMethod("j", options)).intercept(chain -> {
+                Integer disabled = ShareModeRuntime.result("j");
+                if (disabled != null) return disabled;
                 if (INTERNAL.get()) return chain.proceed();
                 synchronized (ReceiveController.class) {
                     previousOptions = chain.getArg(0);
@@ -48,6 +53,8 @@ final class ReceiveController {
                 return chain.proceed();
             }));
             handles.add(module.hook(controller.getDeclaredMethod("h")).intercept(chain -> {
+                Integer disabled = ShareModeRuntime.result("h");
+                if (disabled != null) return disabled;
                 if (INTERNAL.get()) return chain.proceed();
                 synchronized (ReceiveController.class) {
                     previousListening = false;
@@ -76,6 +83,7 @@ final class ReceiveController {
                 Object result = chain.proceed();
                 ((java.io.PrintWriter) chain.getArg(1)).println("OPAIRSHARE_RECEIVE busy=" + (IncomingReceiver.busy() ? 1 : 0));
                 ((java.io.PrintWriter) chain.getArg(1)).println("OPAIRSHARE_DISCOVERY " + DiscoveryController.status(ProviderHolder.get()));
+                ((java.io.PrintWriter) chain.getArg(1)).println("OPAIRSHARE_MODE switch_ready=" + (switchReady() ? 1 : 0));
                 return result;
             }));
             installed = true;
@@ -100,7 +108,12 @@ final class ReceiveController {
 
     static boolean admitting() { return owned && wanted() && BridgeMessenger.hasReceiveClient(); }
 
+    static boolean acceptingExisting() {
+        return owned && BridgeMessenger.hasReceiveClient() && (wanted() || ShareModeRuntime.switching());
+    }
+
     private static boolean wanted() {
+        if (!ShareModeRuntime.current().usesOShare() || ShareModeRuntime.switching()) return false;
         try {
             String ready = (String) Class.forName("android.os.SystemProperties")
                     .getMethod("get", String.class, String.class).invoke(null, "debug.opairshare.receive.ready", "");
@@ -112,13 +125,20 @@ final class ReceiveController {
 
     private static void internal(Runnable action) {
         INTERNAL.set(true);
-        try { action.run(); } finally { INTERNAL.remove(); }
+        try { ShareMode.bridgeCall(() -> { action.run(); return null; }); }
+        catch (RuntimeException failure) { throw failure; }
+        catch (Exception failure) { throw new IllegalStateException(failure); }
+        finally { INTERNAL.remove(); }
     }
 
     private static void tick() {
         boolean want = wanted() && BridgeMessenger.hasReceiveClient();
-        IncomingReceiver.tick(want);
+        IncomingReceiver.tick(want || (ShareModeRuntime.switching() && owned && BridgeMessenger.hasReceiveClient()));
         if (!ProviderHolder.ready()) return;
+        if (ShareModeRuntime.switching() && !IncomingReceiver.busy() && !ProviderApi.hasOutgoing()) {
+            try { ProviderApi.stopDiscovery(); }
+            catch (RuntimeException failure) { Log.w(Entry.TAG, "mode switch discovery release deferred", failure); }
+        }
         String desiredName = ProviderApi.localDeviceName();
         if (want && !owned && !ProviderApi.hasOutgoing() && android.os.SystemClock.elapsedRealtime() >= nextRetry) {
             try {
@@ -179,5 +199,10 @@ final class ReceiveController {
                 } catch (Throwable failure) { Log.w(Entry.TAG, "previous receive callback restore failed", failure); }
             }
         }
+    }
+
+    private static boolean switchReady() {
+        return !owned && !IncomingReceiver.busy() && !ProviderApi.hasOutgoing()
+                && !ProviderApi.discoveryWanted(ProviderHolder.get());
     }
 }

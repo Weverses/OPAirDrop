@@ -69,3 +69,7 @@ sh tests/run-receive-dexkit-android.sh /absolute/path/to/OShare.apk baseline
 `OShareNativeReceivePresenter` 按会话和交互阶段分配卡片实例，使用原生 SDK 发送 START / 更新 / END。只有系统返回与本机资源版本一致的卡片并确认创建后才收起自动进度弹窗；显式打开的详情保留。卡片实例对应的旧阶段动作会被消耗，未标记的 OShare 卡片沿用原路径。
 
 原始接收确认按钮缺少实例标识，继续使用现有邀请弹窗；完成文件入口保留会话 URI。SDK 初始化与调用异步执行，避免阻塞原接收握手和主线程。详细范围见 [实现说明](../docs/OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。
+
+传输中继续使用流体云；整批文件保存成功后，屏幕已解锁且没有其他活动接收界面时自动弹出完成对话框，提供“完成 / 打开文件”和实际保存目录。锁屏或其他接收任务占用界面时，通过通知打开结果；历史快照与重复完成回调不会重复弹窗。
+
+WebUI → 设置 → 文件接收 → 保存位置可指定内部存储 `Download` 或 `Documents` 下的目录（例如 `Download/AirDrop`）。所有文件统一保存到该目录，下一批保存时生效；留空恢复图片 / 视频 / 其他文件的原分类目录。设置保存在 Settings.Global；暂存目录仍为 `Download/.OPAirShare-incoming`，完成文件继续通过 MediaStore 发布并授权 content URI。

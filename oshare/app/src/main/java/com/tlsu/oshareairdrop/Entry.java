@@ -65,7 +65,11 @@ public final class Entry extends XposedModule {
         Method onCreate = loader.loadClass("com.oplus.oshare.OShareApplication").getDeclaredMethod("onCreate");
         hook(onCreate).intercept(chain -> {
             Object result = chain.proceed();
-            try { OShareReceiveBridge.install(this, (Context) chain.getThisObject(), loader); }
+            try {
+                Context context = (Context) chain.getThisObject();
+                ShareModeRuntime.initialize(context);
+                OShareReceiveBridge.install(this, context, loader);
+            }
             catch (Throwable failure) { log(Log.ERROR, TAG, "OShare receive capability unavailable", failure); }
             return result;
         });
@@ -75,6 +79,7 @@ public final class Entry extends XposedModule {
             if (!oshareInstalled) {
                 oshareInstalled = true;
                 Context context = (Context) chain.getArg(0);
+                ShareModeRuntime.initialize(context);
                 HostContext.set(context.getApplicationContext() != null ? context.getApplicationContext() : context);
                 try { OShareBridge.install(this, context, loader); }
                 catch (Throwable failure) { log(Log.ERROR, TAG, "OShare DexKit resolution/install failed", failure); }
@@ -125,19 +130,26 @@ public final class Entry extends XposedModule {
         HostContext.set(app);
         if (!hostHooksInstalled) {
             hostHooksInstalled = true;
+            ShareMode mode = ShareModeRuntime.initialize(app);
+            // Channel adaptation is also required by the original Quick Share path.
+            hookDiscoveryChannels(ProviderHolder.loader(), app);
+            try { ShareModeHooks.install(this, ProviderHolder.loader(), mode); }
+            catch (Exception failure) {
+                log(Log.ERROR, TAG, "AirDrop share mode hooks unavailable; bridge disabled", failure);
+                return;
+            }
             try {
                 Method enabled = Class.forName("dli", false, ProviderHolder.loader()).getDeclaredMethod("j");
                 hook(enabled).intercept(chain -> true);
                 log(Log.INFO, TAG, "external provider enabled for bridge");
             } catch (Throwable t) { log(Log.ERROR, TAG, "provider feature gate unavailable", t); }
             hookSharingController(ProviderHolder.loader());
-            hookDiscoveryChannels(ProviderHolder.loader(), app);
             hookPermissionActivity(ProviderHolder.loader());
             BridgeMessenger.install(app);
             DiscoveryController.install(this, ProviderHolder.loader());
             ReceiveController.install(this, app, ProviderHolder.loader());
         }
-        scheduleServiceStart(app);
+        if (ShareModeRuntime.initialize(app).usesOShare()) scheduleServiceStart(app);
     }
 
     private void hookDiscoveryChannels(ClassLoader loader, Context context) {

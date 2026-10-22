@@ -16,9 +16,20 @@ java -cp "$work" DiscoveryChannelsTest
 
 javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/DiscoverySession.java" "$root/tests/DiscoverySessionTest.java"
 java -cp "$work" com.tlsu.oshareairdrop.DiscoverySessionTest
+javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/ShareMode.java" "$root/tests/ShareModeTest.java"
+java -cp "$work" com.tlsu.oshareairdrop.ShareModeTest
+javac -d "$work/mode-runtime" "$root"/tests/mode-runtime/android/*/*.java \
+    "$root"/tests/mode-runtime/com/tlsu/oshareairdrop/*.java \
+    "$root/app/src/main/java/com/tlsu/oshareairdrop/ShareMode.java" \
+    "$root/app/src/main/java/com/tlsu/oshareairdrop/ShareModeRuntime.java"
+java -cp "$work/mode-runtime" com.tlsu.oshareairdrop.ShareModeRuntimeTest
 
 javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/BridgeReconnect.java" "$root/tests/BridgeReconnectTest.java"
 java -cp "$work" com.tlsu.oshareairdrop.BridgeReconnectTest
 
 javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/OShareApkFiles.java" "$root/tests/OShareApkFilesTest.java"
 java -cp "$work" com.tlsu.oshareairdrop.OShareApkFilesTest
+
+javac -d "$work" "$root/app/src/main/java/com/tlsu/oshareairdrop/ReceiveDirectory.java" "$root/tests/ReceiveDirectoryTest.java" "$root/app/src/main/java/com/tlsu/oshareairdrop/ReceiveUiPolicy.java" "$root/tests/ReceiveUiPolicyTest.java"
+java -cp "$work" com.tlsu.oshareairdrop.ReceiveDirectoryTest
+java -cp "$work" com.tlsu.oshareairdrop.ReceiveUiPolicyTest
