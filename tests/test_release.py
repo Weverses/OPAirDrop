@@ -3,6 +3,7 @@
 from pathlib import Path
 import hashlib
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -59,6 +60,49 @@ class ReleaseTests(unittest.TestCase):
                 emit_metadata(self.archive, self.output, **kwargs)
             self.assertFalse(self.output.exists())
 
+    def test_renamed_archive_uses_actual_asset_name(self):
+        for name, encoded in [('OPAirDrop-v1.0.31-8Elite.zip', 'OPAirDrop-v1.0.31-8Elite.zip'),
+                              ('自定义 module #1.zip', '%E8%87%AA%E5%AE%9A%E4%B9%89%20module%20%231.zip')]:
+            with self.subTest(name=name):
+                self.archive = self.root / name
+                self.write_zip()
+                result = emit_metadata(self.archive, self.output, tag='v1.0.2')
+                self.assertEqual(result['zipUrl'],
+                                 'https://github.com/Weverses/OPAirDrop/releases/download/v1.0.2/' + encoded)
+                self.assertEqual((self.output / (name + '.sha256')).read_text(),
+                                 hashlib.sha256(self.archive.read_bytes()).hexdigest() + '  ' + name + '\n')
+
+    def run_archive_directory(self):
+        return subprocess.run([sys.executable, str(ROOT / 'tools/release.py'),
+                               '--archive-dir', str(self.root), '--out', str(self.output),
+                               '--tag', 'v1.0.2'], capture_output=True, text=True)
+
+    def test_archive_directory_accepts_arbitrary_filename(self):
+        self.archive = self.root / '随便命名的模块.zip'
+        self.write_zip()
+        result = self.run_archive_directory()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), json.loads((self.output / 'update.json').read_text()))
+
+    def test_archive_directory_rejects_missing_or_multiple_zips(self):
+        result = self.run_archive_directory()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('found 0', result.stderr)
+        self.write_zip()
+        (self.root / 'another.zip').write_bytes(self.archive.read_bytes())
+        result = self.run_archive_directory()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('found 2', result.stderr)
+        self.assertIn('another.zip', result.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_renaming_cannot_bypass_release_tag_validation(self):
+        self.archive = self.root / 'custom.zip'
+        self.write_zip(overrides={'version': '1.0.3'})
+        with self.assertRaisesRegex(ValueError, 'Release tag'):
+            emit_metadata(self.archive, self.output, tag='v1.0.2')
+        self.assertFalse(self.output.exists())
+
     def test_modified_payload_fails_before_creating_metadata(self):
         self.write_zip(tamper='service.sh')
         with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
@@ -73,7 +117,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_wrong_module_or_version_rejected(self):
         for overrides in ({'id': 'other'}, {'versionCode': '-1'}, {'versionCode': '2147483648'},
-                          {'version': '1.0.2-beta'}, {'version': '1.0.3'}):
+                          {'version': '1.0.2-beta'}):
             with self.subTest(overrides=overrides):
                 self.write_zip(overrides=overrides)
                 with self.assertRaises(ValueError):

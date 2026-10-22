@@ -80,9 +80,6 @@ def inspect_archive(archive, repository=REPOSITORY, tag=None):
             raise ValueError('module.prop updateJson does not match the release repository')
         if tag is not None and tag != f'v{version}':
             raise ValueError('Release tag must equal v + the ZIP module version')
-        expected_name = f'OPAirDrop-v{version}-PJZ110.zip'
-        if archive.name != expected_name:
-            raise ValueError(f'Expected release asset filename: {expected_name}')
         notes = release_notes(z.read('CHANGELOG.md').decode(), version)
         return props, notes
 
@@ -114,9 +111,10 @@ def main():
     args = parser.parse_args()
     archive = args.zip
     if args.archive_dir:
-        matches = sorted(args.archive_dir.glob('OPAirDrop-v*-PJZ110.zip'))
+        matches = sorted(path for path in args.archive_dir.glob('*.zip') if path.is_file())
         if len(matches) != 1:
-            parser.error('Expected exactly one OPAirDrop PJZ110 ZIP in --archive-dir')
+            parser.error(f'Expected exactly one module ZIP in --archive-dir; found {len(matches)}: '
+                         + ', '.join(path.name for path in matches))
         archive = matches[0]
     try:
         metadata = emit_metadata(archive, args.out, args.repo, args.tag)

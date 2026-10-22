@@ -39,7 +39,7 @@ jobs:
           if info['isDraft'] or info['isPrerelease']:
               raise SystemExit('A published stable release is required')
           PY
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'OPAirDrop-v*-PJZ110.zip' --dir "$RUNNER_TEMP/opairdrop-release/input"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.zip' --dir "$RUNNER_TEMP/opairdrop-release/input"
       - name: Validate ZIP and generate update assets
         shell: bash
         run: |
