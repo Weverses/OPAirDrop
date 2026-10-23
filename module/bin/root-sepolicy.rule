@@ -1,0 +1,9 @@
+# ROM provides mosey_app / mosey_service / mosey_server types.
+# customize.sh substitutes the installer's root domain before policy loading.
+allow ROOT_DOMAIN mosey_service service_manager { add find };
+allow ROOT_DOMAIN servicemanager binder { call transfer };
+allow servicemanager ROOT_DOMAIN binder { call transfer };
+allow mosey_app ROOT_DOMAIN binder { call transfer };
+allow mosey_app ROOT_DOMAIN fd use;
+allow mosey_app mosey_service service_manager find;
+allow ROOT_DOMAIN mosey_server_exec file { read open execute execute_no_trans map getattr };

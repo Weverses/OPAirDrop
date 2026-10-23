@@ -34,7 +34,7 @@ function parseStatus(text:string):Status {
 }
 async function exec(args:string):Promise<string>{
  const bridge=(window as any).ksu;
- if(typeof bridge?.exec!=='function')throw new ApiError(-1,'请从 KernelSU → 模块 → 本模块 WebUI 打开');
+ if(typeof bridge?.exec!=='function')throw new ApiError(-1,'请从支持模块 WebUI 的 Root 管理器或兼容 WebUI 宿主打开本模块');
  return new Promise((resolve,reject)=>{
   const key=`opairshare_miuix_${Date.now()}_${serial++}`;
   const timer=setTimeout(()=>{delete (window as any)[key];reject(new ApiError(-2,'管理器响应超时，保存结果未确认，请刷新后核对。'));},20000);

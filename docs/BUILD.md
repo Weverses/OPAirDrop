@@ -1,6 +1,27 @@
 # 构建说明
 
-本文从仓库根目录介绍各组件的构建方式，以及它们在 KernelSU 模块中的装配位置。WebUI、原生助手和 OShare 桥接可分别构建；Mosey 使用指定版本的 APK 作为输入，内核组件使用 Linux 上的官方平台源码树。
+本文从仓库根目录介绍各组件的构建方式，以及它们在 Root 模块中的装配位置。WebUI、原生助手和 OShare 桥接可分别构建；Mosey 使用指定版本的 APK 作为输入，内核组件使用 Linux 上的官方平台源码树。Root 管理器、挂载方式及 WebUI 宿主兼容说明见 [Root 与挂载兼容](ROOT-MOUNT-COMPATIBILITY.md)。
+
+## 正式发行包
+
+`tools/package-coex.py` 使用已校验的实机自动共存栈和当前源码构建的 OShare 桥接、WebUI，生成正式模块。发行包保留 mode3 驱动、Mosey 自动共存策略、对应 build ID，以及 2.4 / 5 / 6 GHz 下所选的 Fast 配置。内核和 Mosey APK 来自归档快照，不由当前源码重新编译；输入哈希和脚本覆盖记录位于包内 `build-info.json`。
+
+```sh
+python3 tools/build-native.py --sdk "$ANDROID_HOME" --ndk "$ANDROID_NDK_HOME"
+(cd oshare && ./gradlew :app:assembleRelease --offline)
+(cd webui && npm run check && npm run build)
+python3 tools/package-coex.py \
+  --snapshot local-inputs/coex/module.tar \
+  --bridge oshare/app/build/outputs/apk/release/app-release.apk \
+  --installer-base dist/OPAirDrop-v1.0.16.zip
+python3 tools/check-coex.py dist/OPAirDrop-v1.0.23-PJZ110.zip
+```
+
+模块和桥接版本统一读取 `module/module.prop`，装配前校验 release APK 构建元数据、版本、哈希与分享入口能力。输出 ZIP、SHA256，以及 `dist/v<版本>/` 下的正式在线更新元数据；仅生成本地产物，不自动上传或发布。
+
+默认集成有限 peer 过期宽限、接收宿主并行准备、会话快照唯一归档、实时速度与活动任务计时、流体云进度、接收完成弹窗、自定义接收目录和三种 AirDrop 分享入口。安装升级保留已有共存、范围及性能选择，首次安装默认 Fast；分享入口切换保存后重启生效。
+
+检查器在临时目录验证升级偏好保留、首次安装默认配置、冷启动参数，以及 5745 / 5805 / 2447 / 6115 MHz 会话 prepare/restore；另检查桥接版本、来源哈希、有限 peer 过期补丁、shell 语法和 ZIP 全量校验。主机检查不能替代实机文件收发。
 
 ## 1. 环境
 
@@ -60,6 +81,7 @@ npm run check
 npm run build
 cd "$OPAIRSHARE_REPO"
 node tests/test-api.mjs
+node tests/test-webui-refresh.mjs
 ```
 
 产物为 `webui/dist/`。Vite 使用相对资源路径 `base: './'`，装配到模块的 `webroot/` 后由 KernelSU 加载。
@@ -86,6 +108,7 @@ python3 tools/build-native.py \
 | --- | --- | --- |
 | `libopairshare_capability.so` | `native/capability.c` | `payload/native/` |
 | `libopairshare_config.so` | `native/config.c` | `payload/native/` |
+| `libopairshare_channel.so` | `native/channel.c` | `payload/native/` |
 | `opairshare-socket-buffer` | `native/socket-buffer.c` | `payload/native/` |
 | `session-wifi.jar` | `native/OPAirShareSessionWifi.java` | `payload/native/` |
 | `build.json` | 构建器生成 | 本地构建记录 |
@@ -271,9 +294,9 @@ python3 tools/kernel/module_exports.py --dump /path/to/module.ko
 
 装配模块时，用当次构建的四个内核模块更新 `bin/kernel-identity.sh` 中的 `NOTE_*`。模板中的 `BUILD_REQUIRED` 表示待填入的构建标识，`STOCK_NOTE_*` 保留为原厂构建记录，不再用作设备准入或恢复白名单。获取这些信息的工具随目标内核工具链提供。
 
-安装和启动通过 `bin/compatibility.sh` 共用设备准入检测，只要求 Oplus 品牌、`sun` 平台、内核基础版本 `6.6.118`，接受不同内核构建后缀。不检查 SDK、SoC 属性、原厂模块文件或其构建身份，也不按原厂模块大小设置白名单。修改版驱动的实际 ABI 兼容性由内核加载过程判断；模块自身 payload 的构建身份仍用于运行状态与所有权检查。
+安装和启动通过 `bin/compatibility.sh` 共用设备准入检测，要求 Oplus 品牌、`sun` 平台。不检查内核版本、SDK、SoC 属性、原厂模块文件或其构建身份，也不按原厂模块大小设置白名单。修改版驱动的实际 ABI 兼容性由内核加载过程判断；模块自身 payload 的构建身份仍用于运行状态与所有权检查。
 
-主机回归入口为 `python3 tests/test_compatibility.py`。现有发行 ZIP 的 `PJZ110` 文件名后缀保留以兼容发布工具，不参与设备准入判断。三项匹配不代替目标设备上的驱动加载、固件与实际收发验证。
+主机回归入口为 `python3 tests/test_compatibility.py`。现有发行 ZIP 的 `PJZ110` 文件名后缀保留以兼容发布工具，不参与设备准入判断。通过检测不代替目标设备上的驱动加载、固件与实际收发验证。
 
 ## 8. 模块装配
 
@@ -287,24 +310,24 @@ python3 tests/test_lsposed.py
 python3 tools/package.py
 ```
 
-执行前完成上文的 WebUI、原生助手和 OShare release APK 构建。输出为 `dist/OPAirDrop-v1.0.4-PJZ110.zip`、`.zip.sha256`、`update.json` 和 `changelog.md`。模块名称、版本号、描述及在线更新地址以 `module/module.prop` 为准。
+执行前完成上文的 WebUI、原生助手和 OShare release APK 构建。输出文件名根据当前版本生成。模块名称、版本号、描述及在线更新地址以 `module/module.prop` 为准。
 
 打包器逐项核验参考二进制的 SHA256，保留其实际导出的内核模块名、sysfs 接口及回调属性名，填入对应的内核 build-id。模块路径、状态目录和最新用户态助手继续使用当前仓库名称。OShare 对参考回调属性提供兼容读取。本流程不会重编译内核或 Mosey 补丁；来源记录位于 ZIP 内的 `build-info.json`。
 
 安装脚本通过 Android 包管理器的标准输入安装 `companion/OShareAirDrop.apk`，通过 `app_process` 运行 `lsposed-setup.jar`。配置器支持旧式模块 ID 表和新版按用户启用表；修改前使用 SQLite 一致性备份，随后通过事务启用桥接并补齐主用户的两个作用域，保留其他模块及已有作用域。LSPosed 在重启后重新加载配置。未知表结构会拒绝修改，安装失败会保留日志并安排开机重试。
 
-v1.0.1 集成 Unlock CN GMS v3.8。`bin/setup-gms.sh` 在安装时读取 `bin/gms-paths.txt` 的 11 个候选路径，通过 `bin/gms-filter.awk` 仅移除两项目标 feature，生成 `gms-unlock/overlays/`、挂载清单和动态 SHA256 清单。`post-fs-data.sh` 在 Android 读取权限 XML 前调用 `bin/gms-unlock.sh`，检查目标路径后使用 KernelSU BusyBox 进行只读 bind mount，失败信息写入 `/data/adb/opairshare/gms-unlock.log`。生成的配置来自安装设备，不预置到发行 ZIP 中；输入包来源记录随包保存在 `third-party/unlock-cn-gms/`。
+v1.0.1 集成 Unlock CN GMS v3.8。`bin/setup-gms.sh` 在安装时读取 `bin/gms-paths.txt` 的 11 个候选路径，通过 `bin/gms-filter.awk` 仅移除两项目标 feature，生成 `gms-unlock/overlays/`、挂载清单和动态 SHA256 清单。`post-fs-data.sh` 在 Android 读取权限 XML 前调用 `bin/gms-unlock.sh`，检查目标路径后通过 `bin/root-runtime.sh` 选择管理器 BusyBox 或可用系统工具进行只读 bind mount，失败信息写入 `/data/adb/opairshare/gms-unlock.log`。生成的配置来自安装设备，不预置到发行 ZIP 中；输入包来源记录随包保存在 `third-party/unlock-cn-gms/`。
 
 运行 `python3 tests/test_gms_unlock.py` 检查 XML 保留、11 个位置、无匹配配置、重复安装、独立模块接管所需的已清理配置、目标路径、挂载失败及只读失败回滚路径。测试通过隔离的文件系统与 mount 替身执行。v1.0.4 起服务启动不再遍历文件清单或校验组件哈希；APK 原版/回调挂载切换仍按对应版本识别文件，避免混用认证状态。
 
 ### 8.2 发布与在线更新
 
-KernelSU 读取 `module.prop` 的 `updateJson`，该地址指向 GitHub 最新正式 Release 的 `update.json` 附件。JSON 包含 `version`、整数 `versionCode`、`zipUrl` 和 `changelog`；下载和日志链接固定到对应版本标签，避免指向其他版本。`tools/package.py` 自动从实际 ZIP 内的版本信息及 `CHANGELOG.md` 生成这些文件，校验全部文件的 SHA256，遇到版本、标签、模块 ID、文件名或更新源不一致时拒绝生成。
+KernelSU 读取 `module.prop` 的 `updateJson`，该地址指向 GitHub 最新正式 Release 的 `update.json` 附件。JSON 包含 `version`、整数 `versionCode`、`zipUrl` 和 `changelog`；下载和日志链接固定到对应版本标签，避免指向其他版本。`tools/package-coex.py` 自动从实际 ZIP 内的版本信息及 `CHANGELOG.md` 生成这些文件，校验全部文件的 SHA256，遇到版本、标签、模块 ID、文件名或更新源不一致时拒绝生成。
 
 发布步骤：
 
 1. 更新 `module/module.prop` 中的语义化 `version`、递增的 `versionCode`，并在 `CHANGELOG.md` 添加对应版本段落。
-2. 运行 `python3 tests/test_release.py`、`python3 tools/check.py` 和 `python3 tools/package.py`。
+2. 运行 `python3 tests/test_release.py`、`python3 tools/check.py` 和 `python3 tools/package-coex.py`（参数见上文）。
 3. 将代码及 `.github/workflows/ksu-update.yml` 推送到主分支；在 GitHub 创建标签与模块版本一致的草稿 Release（例如 `v1.0.2`），上传 `dist/` 下的 ZIP、`.zip.sha256`、`update.json` 和 `changelog.md`，然后发布为正式 Release。
 4. `.github/workflows/ksu-update.yml` 在正式发布后，下载该版本 ZIP，核对其完整性和版本信息，重新生成并上传更新元数据及校验文件。需要重新生成时，在 Actions 中手动运行并填写现有正式 Release 标签。流程不会处理草稿或预发布版本，不会编译依赖本地输入的内核与 APK。
 
@@ -327,8 +350,8 @@ module/
 ├── service.sh
 ├── post-fs-data.sh                  ← 内置 GMS 解锁的开机早期挂载
 ├── uninstall.sh
-├── sepolicy.rule
-├── bin/
+├── sepolicy.rule                    ← 安装时按实际 Root 域生成，不预置到 ZIP
+├── bin/                            ← 含 root-runtime.sh、root-sepolicy.rule、mount-check.sh
 ├── webroot/                         ← webui/dist/
 ├── companion/                       ← OShare 桥接 APK
 ├── payload/
@@ -354,6 +377,7 @@ mkdir -p build/package/module/webroot build/package/module/payload/native
 cp -R webui/dist/. build/package/module/webroot/
 cp build/native/libopairshare_capability.so build/package/module/payload/native/
 cp build/native/libopairshare_config.so build/package/module/payload/native/
+cp build/native/libopairshare_channel.so build/package/module/payload/native/
 cp build/native/opairshare-socket-buffer build/package/module/payload/native/
 cp build/native/session-wifi.jar build/package/module/payload/native/
 ```
@@ -381,6 +405,7 @@ python3 tools/check.py
 python3 tests/test_settings.py
 python3 tests/test_history.py
 node tests/test-api.mjs
+node tests/test-webui-refresh.mjs
 sh oshare/tests/run.sh
 ```
 

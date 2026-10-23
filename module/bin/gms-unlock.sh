@@ -5,11 +5,17 @@ BASE=${1:?module directory required}
 # Optional fixture root for host tests, matching setup-gms.sh.
 DEVICE_ROOT=${2:-}
 WORK="$BASE/gms-unlock"
+. "$BASE/bin/root-runtime.sh"
+[ -n "$DEVICE_ROOT" ] || root_enter_global "$0" "$@"
 # Android Toybox cannot reliably remount file bind mounts on this device.
-# Pin KernelSU's BusyBox instead of depending on standalone-ash/PATH behavior.
+# Prefer the active manager's BusyBox; fall back to available native tools.
 mount_gms() {
     if [ -n "$DEVICE_ROOT" ]; then mount "$@"
-    else /data/adb/ksu/bin/busybox mount "$@"; fi
+    else root_tool mount "$@"; fi
+}
+umount_gms() {
+    if [ -n "$DEVICE_ROOT" ]; then umount "$@"
+    else root_tool umount "$@"; fi
 }
 [ -d "$WORK" ] || { echo 'GMS overlays not configured'; exit 0; }
 count=0
@@ -35,7 +41,7 @@ while IFS= read -r origin; do
             echo "GMS overlay mounted read-only: $origin"
             count=$((count + 1))
         else
-            umount "$target" || true
+            umount_gms "$target" || true
             echo "GMS overlay read-only remount failed: $origin"
             failed=$((failed + 1))
         fi

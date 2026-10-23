@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise Oplus/sun/6.6.118 admission at the install and start entrypoints."""
+"""Exercise Oplus/sun admission at the install and start entrypoints."""
 from pathlib import Path
 import os
 import shutil
@@ -54,6 +54,11 @@ class CompatibilityTests(unittest.TestCase):
         for name in ('qca_cld3_peach_v2', 'mac80211'):
             (self.live / name).write_text('different-stock-build')
         shutil.copy2(ROOT / 'module/bin/compatibility.sh', self.bin)
+        shutil.copy2(ROOT / 'module/bin/root-runtime.sh', self.bin)
+        # Namespace entry is exercised separately with real runtime helper fixtures.
+        with (self.bin / 'root-runtime.sh').open('a') as out:
+            out.write('\nroot_enter_global() { :; }\n')
+        (self.bin / 'mount-check.sh').write_text('exit 0\n')
         (self.bin / 'common.sh').write_text(f'''STATE='{self.state}'
 init_state() {{ :; }}
 loaded() {{ grep -q "^$1 " '{self.modules}'; }}
@@ -65,7 +70,6 @@ module_note() {{ cat '{self.live}/'$1 2>/dev/null; }}
         (self.bin / 'control.sh').write_text(control)
         # Run the production installer up to the first configuration mutation.
         installer = (ROOT / 'module/customize.sh').read_text().split('# Replacement must not merge', 1)[0]
-        installer = installer.replace('[ -e /data/adb/metamodule ]', 'true')
         installer += f'touch "{self.marker}"\n'
         (self.module / 'customize.sh').write_text(installer)
         (self.bin / 'verify.sh').write_text('exit 0\n')
@@ -113,14 +117,9 @@ module_note() {{ cat '{self.live}/'$1 2>/dev/null; }}
                 result = self.check()
                 self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_platform_and_kernel_mismatches_reject_before_mutation(self):
+    def test_platform_mismatches_reject_before_mutation(self):
         cases = [('ro.board.platform', 'other', 'sun platform'),
-                 ('ro.board.platform', '', 'sun platform'),
-                 ('kernel', '6.6.117-android15', '6.6.118'),
-                 ('kernel', '6.6.119', '6.6.118'),
-                 ('kernel', '6.6.1180', '6.6.118'),
-                 ('kernel', '6.6.118.1', '6.6.118'),
-                 ('kernel', '', '6.6.118')]
+                 ('ro.board.platform', '', 'sun platform')]
         for prop, value, reason in cases:
             original = (self.props / prop).read_text()
             with self.subTest(prop=prop, value=value):
@@ -137,8 +136,20 @@ module_note() {{ cat '{self.live}/'$1 2>/dev/null; }}
         self.assert_rejected(self.start(), 'Oplus device required')
         self.assertFalse(self.marker.exists())
 
-    def test_base_version_and_different_kernel_suffixes_pass(self):
-        for kernel in ('6.6.118', '6.6.118-android15-custom', '6.6.118-other-build-16k', '6.6.118+'):
+    def test_missing_system_mounts_reject_before_driver_changes(self):
+        (self.bin / 'mount-check.sh').write_text('echo "missing system mounts" >&2; exit 3\n')
+        self.assert_rejected(self.start(), 'missing system mounts')
+        self.assertFalse(self.marker.exists())
+
+    def test_installer_accepts_other_root_managers_without_metamodule(self):
+        for hints in ('APATCH=true', 'MAGISK_VER=30.0', 'KSU=true', ''):
+            prefix = 'MODPATH=$1; ' + (hints + '; ' if hints else '')
+            result = self.run_shell(prefix + 'ui_print() { echo "$*"; }; '
+                                    'abort() { echo "$*" >&2; exit 2; }; . "$1/customize.sh"', str(self.module))
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_kernel_versions_do_not_restrict_existing_admission_policy(self):
+        for kernel in ('6.6.118', '6.6.118-android15-custom', '6.6.118-other-build-16k', '6.6.118+', '6.6.119'):
             with self.subTest(kernel=kernel):
                 self.prop('kernel', kernel)
                 result = self.install()

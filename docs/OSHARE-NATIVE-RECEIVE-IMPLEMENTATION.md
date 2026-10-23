@@ -22,7 +22,7 @@ UPK 带厂商签名；本实现只读取原文件，不改写布局、动作或�
 | --- | --- |
 | `OShareSeedlingResolver.java` | 独立 APK 指纹缓存；语义定位卡片 provider、原 ROM 支持判断；完整绑定 SDK 构造器、方法、回调和生命周期 |
 | `OShareSeedlingAssets.java` | 读取实际安装的原始 UPK；校验标识、版本、大小、页面数据、交互显隐及带实例的取消动作；提供原生默认数据 |
-| `OShareNativeReceivePresenter.java` | 会话 / 阶段与卡片实例映射；START、单宿主数据响应、全部宿主进度更新及 END；失败回退 |
+| `OShareNativeTransferPresenter.java` | 会话 / 阶段与卡片实例映射；START、单宿主数据响应、全部宿主进度更新及 END；失败回退 |
 | `OShareReceiveBridge.java` | 维持原有命令、文件和弹窗；协调原生呈现、底层通知、显式详情与退回路径 |
 
 ## 生命周期与动作归属

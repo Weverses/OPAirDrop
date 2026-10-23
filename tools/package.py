@@ -111,9 +111,11 @@ def main():
     copy_tree(ROOT / 'third-party/unlock-cn-gms', output / 'third-party/unlock-cn-gms')
     (output / 'README.md').write_text(
         f'# OPAirDrop {props["version"]}\n\n{props["description"]}\n\n'
-        '设备准入：Oplus 品牌 / sun 平台 / 6.6.118 内核基础版本，允许不同构建后缀。'
+        '设备准入：Oplus 品牌 / sun 平台；内核版本不作为安装门槛，实际驱动 ABI 仍须兼容。'
         '不限制型号、SDK、SoC 属性及原厂驱动身份。已验证机型 PJZ110；其他机型仍需实际收发验证。\n\n'
-        '需要 KernelSU 与元模块，不限定具体元模块实现。安装时检测 LSPosed，自动安装并启用 OShare，'
+        '支持 KernelSU 及兼容分支、Magisk、APatch 的模块安装环境；系统文件可由管理器内置挂载、'
+        'Magic Mount、OverlayFS 或 Mountify 等兼容实现提供，不强制要求元模块目录。'
+        '管理器和挂载组合仍需实机验证。安装时检测 LSPosed，自动安装并启用 OShare，'
         '配置 OShare 与 Mosey 的主用户作用域。安装后重启一次。恢复环境安装或 LSPosed 尚未初始化时，'
         '开机后自动重试；若开机后才完成激活，需要再次重启。无 LSPosed 时会跳过桥接安装。\n\n'
         '配置前的 LSPosed 数据库备份与安装日志保存在 /data/adb/opairshare/。\n\n'

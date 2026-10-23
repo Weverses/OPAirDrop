@@ -63,3 +63,8 @@ await assert.rejects(()=>api.API.saveShareMode('oshare'),/不一致/);
 window.ksu.exec=(command,options,callback)=>queueMicrotask(()=>window[callback](0,JSON.stringify({...state,share_mode_active:'bad'}),''));
 await assert.rejects(()=>api.API.status(),/分享入口无法解析/);
 console.log('Share mode: allowlist, pending readback, active mode and malformed status passed.');
+
+delete window.ksu;
+await assert.rejects(()=>api.API.status(),e=>e.code===-1&&e.message.includes('WebUI 宿主'));
+assert.equal(Object.keys(window).filter(k=>k.startsWith('opairshare_miuix_')).length,0);
+console.log('Missing WebUI bridge reports a manager-independent host requirement.');

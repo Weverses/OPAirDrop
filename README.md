@@ -4,7 +4,7 @@
 
 为 Oplus Android 设备连接 AirDrop、Quick Share 与 OShare 分享入口。
 
-从系统分享面板选择文件后，OPAirDrop 在互传界面显示 Apple 设备，并通过 AWDL 传输文件。项目使用 Mosey 分享服务，配合 Wonder、Qualcomm WLAN 驱动适配和 OShare 桥接。KernelSU 模块负责服务生命周期，WebUI 提供状态、共存设置、速度历史和日志入口。
+从系统分享面板选择文件后，OPAirDrop 在互传界面显示 Apple 设备，并通过 AWDL 传输文件。项目使用 Mosey 分享服务，配合 Wonder、Qualcomm WLAN 驱动适配和 OShare 桥接。Root 模块负责服务生命周期，WebUI 提供状态、共存设置、速度历史和日志入口。
 
 ## 功能
 
@@ -21,22 +21,32 @@
 | --- | --- |
 | 设备范围 | Oplus（OPPO / OnePlus / realme）`sun` 平台；已验证机型 PJZ110 |
 | Android SDK | 已验证 37，不作为安装限制 |
-| 内核 | `6.6.118`，允许不同构建后缀 |
+| 内核 | 已验证 `6.6.118`；安装不限制版本，驱动 ABI 仍须兼容 |
 | WLAN 平台 | Qualcomm `sun` / `peach-v2` |
 | AWDL | 信道 149，5745 MHz，20 MHz 带宽 |
 | 共存 STA 频段 | 2.4 / 5 / 6 GHz，按连接条件选择策略 |
-| 模块环境 | KernelSU + 元模块（不限定具体实现） |
+| 模块环境 | KernelSU 及兼容分支 / Magisk / APatch；需可用的系统挂载功能 |
 | OShare 桥接 | LSPosed，作用域为 OShare 与 Mosey |
 
-安装和启动共用 `module/bin/compatibility.sh`，设备准入只检查三项：Oplus 品牌、`ro.board.platform=sun`、内核基础版本 `6.6.118`（接受 `6.6.118`、`6.6.118-*` 和 `6.6.118+*`）。不限制型号、SoC 属性、SDK、内核构建后缀或原厂驱动构建身份。KernelSU、元模块和包完整性检查仍是模块运行与安装要求。
+安装和启动共用 `module/bin/compatibility.sh`，设备准入检查 Oplus 品牌、`ro.board.platform=sun`。不限制型号、SoC 属性、SDK、内核版本或原厂驱动构建身份。安装仍检查 Root 权限和包完整性；元模块名称与 `/data/adb/metamodule` 是否存在不作为准入条件。
 
-模块自身已加载的修改版驱动与 provider / Wonder 继续校验身份，用于识别本模块拥有的运行状态。原厂驱动不再按 PJZ110 的构建身份或模块大小拦截，实际加载结果由内核决定。通过三项检测不代表所有固件、OShare / Mosey 版本或实际收发已验证。
+模块自身已加载的修改版驱动与 provider / Wonder 继续校验身份，用于识别本模块拥有的运行状态。原厂驱动不再按 PJZ110 的构建身份或模块大小拦截，实际加载结果由内核决定。通过检测不代表所有固件、OShare / Mosey 版本或实际收发已验证。
+
+### Root 管理器与挂载方式
+
+- 适配 KernelSU 及兼容分支、Magisk、APatch 的模块安装与启动接口。支持管理器内置挂载、Magic Mount、OverlayFS，以及 Mountify 等外部挂载实现；不要求额外安装元模块来通过检测。
+- 系统文件仍须由管理器或挂载模块在 Android 扫描系统包前挂载。启动驱动前检查 Mosey APK、原生服务与库是否可见，并比对权限及 VINTF 配置。缺失时停止启动，具体路径见 `/data/adb/opairshare/boot-start.log`。
+- Mountify 若启用了选择性挂载，需将 `opairshare` 加入其挂载列表；检查模块是否被禁用、是否存在 `skip_mount`，以及 OShare、Mosey、GMS 是否被管理器设置为卸载模块。修正后重启。
+- 回调 APK 和 GMS 配置的 bind mount 优先使用当前管理器的 BusyBox，按工具能力回退；挂载在 Android 全局挂载命名空间中执行。安装时根据实际 Root SELinux 域生成规则。
+- WebUI 需要提供兼容 `ksu.exec` 接口的管理器或独立 WebUI 宿主。Magisk 本身没有模块 WebUI 入口，可使用兼容宿主或通过 Root shell 调用模块脚本。
+
+新增兼容逻辑已通过主机模拟测试；Magisk、APatch、Mountify 等组合的真实重启、发现与双向收发仍待实机验证。挂载排查与测试说明见 [Root 与挂载兼容说明](docs/ROOT-MOUNT-COMPATIBILITY.md)。
 
 ## 项目结构
 
 ```text
 OPAirShare/
-├── module/           KernelSU 模块与运行脚本
+├── module/           Root 模块与运行脚本
 ├── webui/            Vue 3 + miuix-vue 界面
 ├── oshare/           OShare / Mosey 的 LSPosed 桥接工程
 ├── native/           原生库、socket 助手与 Wi-Fi 会话助手
@@ -78,7 +88,7 @@ sh oshare/tests/run.sh
 1. OPAirDrop 安装时会检测 LSPosed，自动安装、启用随包附带的 OShare 桥接，并为主用户添加 `com.coloros.oshare` 和 `com.google.android.mosey` 作用域。安装后重启一次。未检测到 LSPosed 时跳过桥接安装；安装 LSPosed 后重新安装本模块。
 2. 将手机连接 Wi-Fi，在文件管理器或相册中选择文件，并打开所选的分享入口。
 3. 在 Apple 设备上打开 AirDrop 可见性，在分享列表中选择设备并完成接收确认。
-4. 从 KernelSU 的模块 WebUI 查看服务状态、速度历史和共存设置。
+4. 从支持模块 WebUI 的管理器或兼容 WebUI 宿主查看服务状态、速度历史和共存设置。
 
 模块服务开机自动启动，分享界面退出后的会话释放由后台监督器处理。
 
@@ -132,6 +142,7 @@ WebUI → 设置 → AirDrop 名称可保存自定义名称或恢复默认。默
 
 ## 文档
 
+- [模块特性说明](docs/MODULE-FEATURES.md)：功能概览、使用条件与已知限制。
 - [构建说明](docs/BUILD.md)：环境、依赖、组件构建、模块装配与验收流程。
 - [技术实现说明](docs/TECHNICAL.md)：服务架构、发现和传输链路、无线适配、会话状态与 WebUI API。
 - [SM8750 AWDL 实现](docs/SM8750-AWDL.md)：原厂固件缺少原生 PAS 支持时，如何组合 NDI、WMI RAW TX、monitor 与 native RX 实现 AWDL。

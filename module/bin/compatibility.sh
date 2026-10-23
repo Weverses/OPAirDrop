@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# Shared install/start device gates: Oplus brand, sun platform, Linux 6.6.118.
+# Shared install/start device gates: Oplus brand, sun platform.
 compatibility_error() { echo "Compatibility: $*" >&2; return 2; }
 
 compatibility_device() (
@@ -11,9 +11,4 @@ compatibility_device() (
     [ "$board" = sun ] || {
         compatibility_error "sun platform required; found $board"; exit 2;
     }
-    kernel=$(uname -r)
-    case "$kernel" in
-        6.6.118|6.6.118-*|6.6.118+*) ;;
-        *) compatibility_error "Linux 6.6.118 required; found $kernel"; exit 2;;
-    esac
 )

@@ -127,7 +127,7 @@ OShare 桥接从 `ACTION_SEND`、`ACTION_SEND_MULTIPLE` 读取共享 URI、文�
 | 会话策略 | STA 频率 | AWDL 请求 |
 | --- | --- | --- |
 | `same149` | 5745 MHz | `[149]` |
-| `cross5g` | 5200 MHz | `[149]` |
+| `cross5g`（历史兼容，当前模块不再启用） | 5200 MHz | `[149]` |
 
 该逻辑将宿主国家码查询或频道回退结果与固定 149 的无线服务配置对齐，再交给 Mosey 的发现策略处理。
 
@@ -139,13 +139,17 @@ Mosey 中的 `ReceiveController` 在模块后台接收开启、root 共存准备
 
 Mosey 的下载目录参数是公共 Downloads 下的目录名。本桥接使用 `.OPAirShare-incoming`，完成后按源文件实际长度复制到 MediaStore。原生小型文本文件自动转 TextAttachment 并删除原文件的分支，仅对当前桥接拥有的文件附件禁用，以保留字节与文件名。保存失败可重试，成功后提供授权 content URI。
 
+WebUI 的 `receive-directory-set <UTF-8 hex>` / `receive-directory-reset` 通过 Settings.Global `opairshare_receive_directory_hex` 设置完成文件目录。状态字段为 `receive_directory`；空值沿用原先 Pictures / Movies / Download 下的 OPAirShare 分类。自定义目录限定为 Download 或 Documents 及其非隐藏子目录，经 MediaStore.Files 发布整批文件。Java、WebUI 与 shell 校验 UTF-8、字节长度、目录分段和路径跳转；每批发布开始时读取一次配置，已有文件不移动，Mosey 暂存目录不变。完成事件携带 MediaStore 返回的实际文件名、目录及可授权 URI。
+
 `ui-lifecycle.sh` 同时管理发送界面和后台接收需求。从 1.0.11 起，后台接收由模块与共存开关控制，独立于 oshare_state 和原生时限。OShare 宿主通过模块拥有的前台服务代理保持运行；撤销新邀请不释放忙碌的接收宿主，确认空闲后才释放代理。相关主机回归位于 `tests/test_receive_lifecycle.py`；目前真机已验证 Mac 发送文本文件、接收确认、保存及 SHA256 一致，其他场景仍待验证。
 
 ### 3.5 原生 Seedling 接收展示（1.0.13）
 
-接收宿主异步解析独立 Seedling 能力，读取手机原始签名 UPK 的 index 页面默认数据和动作契约。`OShareNativeReceivePresenter` 将现有接收快照映射为原生卡片数据，串行后台调用 SDK START / update / END，真实卡片版本与实例创建确认后接管进度呈现，失败保留原弹窗和通知。
+接收宿主异步解析独立 Seedling 能力，读取手机原始签名 UPK 的 index 页面默认数据和动作契约。`OShareNativeTransferPresenter` 将现有接收快照映射为原生卡片数据，串行后台调用 SDK START / update / END，真实卡片版本与实例创建确认后接管进度呈现，失败保留原弹窗和通知。发送共用同一生命周期并使用独立实例，详见 [发送流体云说明](OSHARE-NATIVE-SEND-IMPLEMENTATION.md)。
 
 原生 progress widget 的 `cancel` 带 instanceId，可映射到当前阶段的取消或查看。每次交互意义切换轮换实例，退休实例仍被识别并消耗，避免动作落入原协议单例。现有通知保留为卡片关联的底层通知，交由 Seedling 的 notificationIdList 协调呈现；完成后继续提供会话文件入口。
+
+`ReceiveUiPolicy` 仅在已知会话从未发布转为 complete + terminal + published 时触发完成弹窗，不重放历史结果。原生进度只收起非终态、非手动打开的对话框；保存成功后自动重新打开完成界面，保留“完成 / 打开文件”及实际目录。锁屏、原生 OShare 接收占用或另一个活跃接收界面存在时保留通知入口，不抢占界面。
 
 基线原始确认按钮没有实例标识，因此隐藏这些原生按钮，邀请确认保留现有安全弹窗。原生接收控制器不参与 AirDrop 传输；模板不改写、不绕过签名。见 [实现范围](OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。
 
@@ -280,13 +284,18 @@ native RX 工作项绑定当前 vdev 与 peer，执行时检查 bridge 的会话
 | STA | 策略 property | 本次会话配置 |
 | --- | --- | --- |
 | 5745 MHz | `same149` | 同信道发现，沿用当前 TX profile |
-| 5200 MHz | `cross5g` | HT MCS7、1SS、聚合关闭、收集窗口为 0 |
 
-两种策略均启用 `passthru_awdl_allow_concurrent` 与 `passthru_mgmt_home_channel`，AWDL 使用 5745 MHz。
+当前仅启用 `same149`，设置 `passthru_awdl_allow_concurrent` 与 `passthru_mgmt_home_channel`，AWDL 使用 5745 MHz。
 
 prepare 先将 boot ID、STA 频率、原 property 和七个驱动参数写入 `coex-session.preparing/`，再通过目录重命名提交为 `coex-session/`，随后应用会话配置。tick 根据活动 channel 和 matcher 状态选择 native RX ring。restore 在无线会话释放后写回快照，并将记录归档为 `coex-session.restored-*`。
 
-设置中的 `scope=auto` 使用上表两种频率；`scope=same149` 选择 STA 5745 MHz。
+`scope=auto` 与 `scope=same149` 均只允许 STA 5745 MHz；保留旧枚举用于配置兼容。
+
+`coex-wifi.sh` 通过有超时的 `cmd wifi status` 查询确认 Wi-Fi 启用、已连接、Supplicant COMPLETED、频率 5745 MHz 和 network ID。监督器每轮检查（正常循环约 1 秒，另加命令耗时），发现断线、非 149 或状态不可读时写入独立的 `coex-wifi-blocked` 暂停标记；不改写用户的 `coex-off`。同信道 network ID 改变、断线或频率变化会将已有共存会话标为 `invalidated`。
+
+失效会话立即关闭接收准入，等待 provider 确认无待确认邀请、传输或文件发布，再按 provider release → native Stop → 驱动空闲确认 → 参数恢复释放，即使分享页面仍在前台也会执行。回到 149 后重新准备共存；同信道换网络也重建会话。非 149 下前台分享沿用非共存流程，回到 149 时先安全释放旧会话及 Wi-Fi 元数据，再升级为共存；Wi-Fi 状态不可读时不自动启动非共存流程。手动关闭不会自动恢复。此恢复不保证无线变化时已有传输不中断。
+
+接收 `ready` 再次查询当前连接，检查暂停/失效标记及 network ID，避免准备与广播之间的网络变化直接开放准入。`settings.sh status` 的 `coexist` 表示当前可用策略，`coexist_requested` 保存用户开关，`coexist_reason` 说明暂停原因；WebUI 使用 requested 保存设置，避免把暂时暂停误存为永久关闭。
 
 ## 8. 状态与并发管理
 
@@ -329,6 +338,7 @@ prepare 先将 boot ID、STA 频率、原 property 和七个驱动参数写入 `
 | --- | --- | --- |
 | 状态 | `settings.sh status` | 配置、进程与驱动状态 JSON |
 | 保存 | `settings.sh apply <coexist> <scope> <profile> <autostart>` | 保存后的状态 JSON |
+| 共存开关 | `settings.sh coexist on/off` | 保留其他配置，经过原保存检查后返回状态 JSON |
 | 即时计数 | `settings.sh speed` | 接口字节数、ifindex 与采样时钟 |
 | 历史 | `speed-history.sh status` | `recorder`、`live` 与 `history` |
 | 日志 | `settings.sh logs` | 最近启动和监督器日志 |
@@ -343,11 +353,13 @@ profile:  fast | vht | on | off
 autostart: on | off
 ```
 
-界面的共存开关先读取完整配置，再修改 `coexist`，其余字段沿用当前值。`awdl` 状态由驱动参数节点和原生服务进程生成；QuickShare 与 OShare 状态来自安装信息和进程状态。原始 `radio`、`matcher`、`pending` 字段用于描述无线会话。
+共存开关由后端读取当前 scope、profile 和 autostart，复用 `apply` 的锁与传输安全检查。配置和名称保存直接验证后端返回的状态 JSON，每次保存只调用一次 root bridge。`awdl` 状态由驱动参数节点和原生服务进程生成；QuickShare 与 OShare 优先检查运行进程，未运行时查询安装信息。状态 JSON 由 `webui-status.sh` 一次序列化，保留字符串转义；原始 `radio`、`matcher`、`pending` 字段用于描述无线会话。
+
+界面可见时，实时速度每秒刷新，完整状态每五秒刷新；切页复用近期状态，未变化的历史列表不重建。后台查询和保存使用独立的忙状态，查询期间仍可操作设置；保存会使此前未完成的状态请求失效，避免旧结果覆盖保存结果。开关立即展示待保存值，保存失败时回到已确认值；切页不再等待旧页面淡出。
 
 ## 10. 速度历史
 
-`speed-history.sh` 是由监督器启动的独立后台进程，每秒读取：
+`speed-history.sh` 是由监督器启动的独立后台进程，每 500 毫秒读取：
 
 ```text
 /sys/class/net/mosey0/ifindex
@@ -361,11 +373,12 @@ autostart: on | off
 
 - 接口首次出现、ifindex 变化或计数重置时建立新的采样基线。
 - 累计数据变化时更新发送/接收字节数、峰值和平均速率。
-- 连续 6 秒空闲、接口重建或进程退出时结算当前记录。
-- 捕获到活动传输状态的记录标记为 `transfer`；其他记录标记为 `traffic`，累计流量达到 65536 字节后保存。
+- 每秒查询 provider 的传输状态。桥接观察 OShare / Quick Share 的发送、接收回调，并输出 `OPAIRSHARE_HISTORY state=waiting|active|idle`；连接、等待本机确认及等待对方接受不启动记录，且不累计这些阶段的握手流量。发送进入传输状态、接收成功接受后开始计时；确认空闲时结算，保留结束采样中的最后一批数据，之后的发现流量不再累计。
+- provider 保持传输或文件保存状态时，零流量暂停不会拆分记录。状态未知时沿用流量采样，连续 6 秒无数据、接口重建或进程退出时结算。
+- 确认的传输记录标记为 `transfer`；provider 状态未知时的流量记录标记为 `traffic`，累计流量达到 65536 字节后保存。
 - `records.jsonl` 保留最近 100 条，通过临时文件和重命名提交。
 
-统计粒度为 AWDL 流量会话，包含接口上的协议流量；同一会话内的并发文件合并统计。平均速率以最后一次数据变化作为结束时间，空闲等待时间在记录结算时排除。
+统计包含计时范围内接口上的协议流量，同一传输期间的并发文件合并统计；平均速率与用时使用同一范围。接受后的暂停、校验及接收文件发布继续计入用时。等待中拒绝或超时不保存传输记录。传输用时按采样到的活动状态计算，边界精度受每秒状态查询和 dumpsys 耗时影响；等待期间状态查询失败时继续排除等待，桥接阶段观测不可用时回退原 provider 状态判断。其他未知状态下的流量用时以最后一次数据变化作为结束时间。实时速率独立于传输确认状态；记录进程检测只匹配脚本路径，避免 `/proc/PID/cmdline` 的 NUL 参数分隔符导致误报停止。旧记录缺少确认及传输阶段边界，无法事后扣除等待时间。
 
 ## 11. 代码阅读顺序
 

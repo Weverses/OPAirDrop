@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# KernelSU WebUI API: fixed commands and enums; no user-provided shell text.
+# Module WebUI API: fixed commands and enums; no user-provided shell text.
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
@@ -131,7 +131,7 @@ case "${1:-status}" in
     share-mode)
         [ "$#" = 2 ] || exit 2
         valid_share_mode "$2" || exit 2
-        [ "$(id -u)" = 0 ] || fail '需要 KernelSU root 权限。'
+        [ "$(id -u)" = 0 ] || fail '需要 Root 权限。'
         exec 7> "$STATE/share-mode.flock";flock -n 7 7>&7 || fail '分享入口正在保存，请稍后重试。'
         # Keep the applied mode stable until the supervisor confirms idle.
         init_share_mode || fail '无法确认当前分享入口，设置未修改。'
@@ -147,7 +147,7 @@ case "${1:-status}" in
         status
         ;;
     receive-directory-set|receive-directory-reset)
-        [ "$(id -u)" = 0 ] || fail '需要 KernelSU root 权限。'
+        [ "$(id -u)" = 0 ] || fail '需要 Root 权限。'
         if [ "$1" = receive-directory-set ];then
             [ "$#" = 2 ] || exit 2
             valid_receive_directory_hex "$2" || fail '请输入 Download 或 Documents 下的目录，不能包含隐藏目录、非法字符或路径跳转。'
@@ -166,7 +166,7 @@ case "${1:-status}" in
         status
         ;;
     name-set|name-reset)
-        [ "$(id -u)" = 0 ] || fail '需要 KernelSU root 权限。'
+        [ "$(id -u)" = 0 ] || fail '需要 Root 权限。'
         if [ "$1" = name-set ];then
             [ "$#" = 2 ] || exit 2
             valid_name_hex "$2" || fail '名称需要包含 1–64 个字符，不能包含换行或控制字符。'
@@ -235,7 +235,7 @@ case "${1:-status}" in
         [ "$3" = auto ] || exit 2
         case "$4" in off|on|vht|fast) ;;*) exit 2;;esac
         case "$5" in on|off) ;;*) exit 2;;esac
-        [ "$(id -u)" = 0 ] || fail '需要 KernelSU root 权限。'
+        [ "$(id -u)" = 0 ] || fail '需要 Root 权限。'
         exec 9> "$STATE/stack.flock";flock -n 9 9>&9 || fail '底层正在执行其他操作，请稍后重试。'
         exec 6> "$STATE/settings.flock";flock -n 6 6>&6 || fail '发现会话正在启动，请稍后重试。'
         idle

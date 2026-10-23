@@ -3,18 +3,16 @@
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 . "$MODDIR/bin/common.sh"
+. "$MODDIR/bin/root-runtime.sh"
 CB="$STATE/callback"
 SYSTEM_APK=/system_ext/priv-app/MoseyApp/base.apk
-BB=/data/adb/ksu/bin/busybox
 die() { echo "Callback patch: $*" >&2; exit 3; }
 digest() { sha256sum "$1" | awk '{print $1}'; }
 base_digest() { awk '$2=="base.apk" {print $1}' "$1"; }
 original=$(base_digest "$MODDIR/APP-SHA256SUMS")
 patched=$(base_digest "$MODDIR/APP-CALLBACK-SHA256SUMS")
 if [ "$(id -u)" != 0 ]; then die 'root required'; fi
-if [ "$(readlink /proc/self/ns/mnt)" != "$(readlink /proc/1/ns/mnt)" ]; then
-    exec "$BB" nsenter -t 1 -m /system/bin/sh "$0" "$@"
-fi
+root_enter_global "$0" "$@" || die 'global mount namespace unavailable'
 init_state
 mkdir -p "$CB"
 exec 7> "$CB/operation.flock"
@@ -30,17 +28,18 @@ idle() {
     [ ! -r "$p" ] || grep -q 'accepting=0 vdev=255 freq=0' "$p" || die 'radio session still active'
 }
 owned() {
-    # Check the actual upper bind source, including a prior module's retained
-    # backing files; never detach the lower Magic Mount view.
-    awk -v target="$1" -v source="$2" '$5==target {root=$4} END {exit(root!=source)}' /proc/self/mountinfo
+    # A file mount must expose our dedicated backing inode. mountinfo's root
+    # varies with /data mount roots and OverlayFS, so never hardcode /adb here.
+    awk -v target="$1" '$5==target {found=1} END {exit(!found)}' /proc/self/mountinfo &&
+        [ "$1" -ef "$2" ]
 }
 restore_owned() {
     same_boot "$CB/boot" || return 0
     for pair in "system:$SYSTEM_APK" "active:$(cat "$CB/active-path")"; do
         kind=${pair%%:*}; target=${pair#*:}
         [ "$kind" != active ] || [ "$target" != "$SYSTEM_APK" ] || continue
-        if owned "$target" "/adb/opairshare/callback/$kind.apk"; then
-            umount "$target" || "$BB" umount -l "$target"
+        if owned "$target" "$CB/$kind.apk"; then
+            root_tool umount "$target" || root_tool umount -l "$target"
             [ "$(digest "$target")" = "$original" ] || die 'original APK view did not return'
         elif [ "$(digest "$target")" != "$original" ]; then
             die "unowned APK view at $target; leave it intact"
@@ -63,9 +62,9 @@ case "${1:-status}" in
         active=$(active_base)
         [ -n "$active" ] && [ "$(printf '%s\n' "$active" | wc -l)" = 1 ] || die 'expected one active base APK'
         if same_boot "$CB/boot" && [ "$(cat "$CB/active-path")" = "$active" ]; then
-            owned "$SYSTEM_APK" /adb/opairshare/callback/system.apk || die 'system patch mount changed'
+            owned "$SYSTEM_APK" "$CB/system.apk" || die 'system patch mount changed'
             if [ "$active" != "$SYSTEM_APK" ]; then
-                owned "$active" /adb/opairshare/callback/active.apk || die 'active patch mount changed'
+                owned "$active" "$CB/active.apk" || die 'active patch mount changed'
             fi
             /system/bin/sh "$MODDIR/bin/app-check.sh" patched 7>&-
             exit 0
@@ -83,11 +82,11 @@ case "${1:-status}" in
         boot_id > "$CB/boot"
         trap 'rc=$?; trap - EXIT; if [ "$rc" != 0 ]; then restore_owned || true; fi; exit "$rc"' EXIT
         if [ "$active" != "$SYSTEM_APK" ]; then
-            mount --bind "$CB/active.apk" "$active"
-            "$BB" mount -o remount,bind,ro "$CB/active.apk" "$active"
+            root_tool mount -o bind "$CB/active.apk" "$active"
+            root_tool mount -o remount,bind,ro "$CB/active.apk" "$active"
         fi
-        mount --bind "$CB/system.apk" "$SYSTEM_APK"
-        "$BB" mount -o remount,bind,ro "$CB/system.apk" "$SYSTEM_APK"
+        root_tool mount -o bind "$CB/system.apk" "$SYSTEM_APK"
+        root_tool mount -o remount,bind,ro "$CB/system.apk" "$SYSTEM_APK"
         /system/bin/sh "$MODDIR/bin/app-check.sh" patched 7>&-
         trap - EXIT
         echo 'CALLBACK_PATCH_READY stage69-discovery-r3'

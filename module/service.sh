@@ -1,5 +1,7 @@
 #!/system/bin/sh
 MODDIR=${0%/*}
+. "$MODDIR/bin/root-runtime.sh"
+root_enter_global "$0" "$@" || exit 2
 . "$MODDIR/bin/common.sh"
 init_state
 rm -f "$STATE/coex-off" "$STATE/coex-same149-only"

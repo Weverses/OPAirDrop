@@ -21,7 +21,7 @@ class GmsUnlockTests(unittest.TestCase):
         self.module = self.root / 'module with spaces'
         (self.module / 'bin').mkdir(parents=True)
         (self.module / 'module.prop').write_text('id=opairshare\n')
-        for name in ('setup-gms.sh', 'gms-unlock.sh', 'gms-paths.txt', 'gms-filter.awk'):
+        for name in ('setup-gms.sh', 'gms-unlock.sh', 'gms-paths.txt', 'gms-filter.awk', 'root-runtime.sh'):
             shutil.copy2(ROOT / 'module/bin' / name, self.module / 'bin' / name)
         self.device = self.root / 'device'
         self.device.mkdir()

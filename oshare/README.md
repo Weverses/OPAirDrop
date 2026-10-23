@@ -28,6 +28,8 @@ sh tests/run.sh
 
 主机测试覆盖回调代理、发送任务、设备展示与发现频道选择。Android 测试入口为 `tests/run-android.sh` 和 `tests/run-appearance-android.sh`。
 
+系统分享面板通过 OShare 的 Direct Share 设备目标接入 AirDrop，沿用原生授权、点击发送和进度回调，作用域仍为 OShare / Mosey。会话、候选策略、准备超时和验证入口见 [系统分享面板实现说明](../docs/OSHARE-CHOOSER-IMPLEMENTATION.md)；安装测试需同时更新桥接与底层前台识别脚本。
+
 ### 桥接握手与诊断
 
 启动 Mosey 的 Activity 显式共享调用方身份，接收端继续校验同一 Android 用户下的受信 UID。不得通过接受 `INVALID_UID` 或信任 Intent 自报 UID 来绕过身份校验。
@@ -66,10 +68,16 @@ sh tests/run-receive-dexkit-android.sh /absolute/path/to/OShare.apk baseline
 
 `OShareSeedlingResolver` 独立定位 OShare 卡片 provider 和 ROM 支持判断，绑定 Seedling SDK 完整签名。`OShareSeedlingAssets` 只读取已安装 OShare 的原始 UPK，检查实际使用页面的按钮显隐及带实例 ID 的进度事件；不复制或修改厂商模板。
 
-`OShareNativeReceivePresenter` 按会话和交互阶段分配卡片实例，使用原生 SDK 发送 START / 更新 / END。只有系统返回与本机资源版本一致的卡片并确认创建后才收起自动进度弹窗；显式打开的详情保留。卡片实例对应的旧阶段动作会被消耗，未标记的 OShare 卡片沿用原路径。
+`OShareNativeTransferPresenter` 按会话和交互阶段分配卡片实例，使用原生 SDK 发送 START / 更新 / END。只有系统返回与本机资源版本一致的卡片并确认创建后才收起自动进度弹窗；显式打开的详情保留。卡片实例对应的旧阶段动作会被消耗，未标记的 OShare 卡片沿用原路径。
 
 原始接收确认按钮缺少实例标识，继续使用现有邀请弹窗；完成文件入口保留会话 URI。SDK 初始化与调用异步执行，避免阻塞原接收握手和主线程。详细范围见 [实现说明](../docs/OSHARE-NATIVE-RECEIVE-IMPLEMENTATION.md)。
 
 传输中继续使用流体云；整批文件保存成功后，屏幕已解锁且没有其他活动接收界面时自动弹出完成对话框，提供“完成 / 打开文件”和实际保存目录。锁屏或其他接收任务占用界面时，通过通知打开结果；历史快照与重复完成回调不会重复弹窗。
 
 WebUI → 设置 → 文件接收 → 保存位置可指定内部存储 `Download` 或 `Documents` 下的目录（例如 `Download/AirDrop`）。所有文件统一保存到该目录，下一批保存时生效；留空恢复图片 / 视频 / 其他文件的原分类目录。设置保存在 Settings.Global；暂存目录仍为 `Download/.OPAirShare-incoming`，完成文件继续通过 MediaStore 发布并授权 content URI。
+
+## 向 Apple 设备发送的流体云展示
+
+发送使用手机原有 `OShareSending2.0.upk` 展示连接、等待接收、传输百分比及结果动画；关闭分享页后继续通过独立任务更新卡片和通知。流体云、通知与分享页取消均绑定当前发送会话，旧任务的延迟点击不能取消重发任务。系统不支持或卡片创建失败时保留普通进度通知。
+
+发送与接收复用 `OShareNativeTransferPresenter` 的 SDK 生命周期，使用不同实例命名空间。实现、测试命令与待完成的真机验收见 [发送流体云说明](../docs/OSHARE-NATIVE-SEND-IMPLEMENTATION.md)。

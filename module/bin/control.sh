@@ -2,6 +2,8 @@
 # Compatible Oplus SM8750 data path; original CNSS always retained.
 set -eu
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
+. "$MODDIR/bin/root-runtime.sh"
+root_enter_global "$0" "$@" || exit 2
 . "$MODDIR/bin/common.sh"
 . "$MODDIR/bin/kernel-identity.sh"
 . "$MODDIR/bin/compatibility.sh"
@@ -238,6 +240,7 @@ case "${1:-status}" in
         ;;
     start)
         preflight; lock_stack
+        /system/bin/sh "$MODDIR/bin/mount-check.sh" "$MODDIR"
         /system/bin/sh "$MODDIR/bin/transfer-idle.sh"
         /system/bin/sh "$MODDIR/bin/grant-permissions.sh"
         rm -f "$STATE/disabled"

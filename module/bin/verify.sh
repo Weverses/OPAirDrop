@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# Accept standard KSU layout or metamodule's relocated system_ext layout.
+# Accept standard system layout or a manager's relocated partition directories.
 set -eu
 BASE=${1:?}
 MODE=${2:-archive}

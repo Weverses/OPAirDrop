@@ -1,13 +1,16 @@
 #!/system/bin/sh
 ui_print "- OPAirDrop v$(sed -n 's/^version=//p' "$MODPATH/module.prop")：为 Oplus sun 平台设备开启 AirDrop"
-[ "${KSU:-false}" = true ] || [ -x /data/adb/ksud ] || abort 'KernelSU required'
-[ -e /data/adb/metamodule ] || abort 'KernelSU metamodule required'
+[ "$(id -u)" = 0 ] || abort 'Root required'
 sh "$MODPATH/bin/verify.sh" "$MODPATH" >/dev/null || abort 'Payload integrity check failed'
+. "$MODPATH/bin/root-runtime.sh"
+ui_print "- Root 环境：$(root_manager)；支持管理器内置挂载或外部挂载模块"
+ui_print '- 不按元模块名称或目录拦截；重启后检查系统文件的实际挂载结果'
 . "$MODPATH/bin/compatibility.sh"
 compat_result=$(compatibility_device 2>&1) || abort "Compatibility check failed: $compat_result"
 ui_print "- 兼容性检测通过：$(getprop ro.product.model) / Oplus / sun / $(uname -r)"
 # Replacement must not merge obsolete split APKs from the earlier module.
 REPLACE="/system/system_ext/priv-app/MoseyApp"
+root_write_policy "$MODPATH" || abort 'Root SELinux policy configuration failed'
 for item in "$MODPATH"/*;do
     [ "$item" != "$MODPATH/webroot" ] || continue
     if [ -d "$item" ];then set_perm_recursive "$item" 0 0 0755 0644
